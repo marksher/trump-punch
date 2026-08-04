@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>YMCA Dodge</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; background: #0d1b2a; }
+  canvas { display: block; touch-action: none; cursor: none; }
+  #hud {
+    position: fixed; top: 12px; left: 14px; color: #fff;
+    font-family: Arial Black, Arial, sans-serif; font-size: 20px;
+    text-shadow: 2px 2px 0 #000; pointer-events: none; letter-spacing: 1px;
+  }
+  #overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    color: #fff; font-family: Arial, sans-serif; background: rgba(0,0,0,0.6);
+    padding: 20px; box-sizing: border-box; cursor: pointer;
+  }
+  #overlay h1 { font-size: 40px; margin: 0 0 12px; text-shadow: 2px 2px 0 #000; }
+  #overlay p { font-size: 17px; max-width: 440px; line-height: 1.4; margin: 6px 0; }
+  #startBtn { font-size: 20px; margin-top: 14px; color: #ffd60a; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">Score: <span id="score">0</span> &nbsp;&nbsp; <span id="lives">❤❤❤</span></div>
+<div id="overlay">
+  <h1>👞 YMCA DODGE 🕺</h1>
+  <p>Trump won't stop dancing the YMCA, and the crowd keeps throwing shoes at him.</p>
+  <p>Move your mouse (or drag your finger) to slide the shield around and block every shoe before it lands.</p>
+  <p id="finalScore" class="hidden"></p>
+  <p id="startBtn"><strong>Click / Tap to Start</strong></p>
+</div>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+const scoreEl = document.getElementById('score');
+const livesEl = document.getElementById('lives');
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('startBtn');
+const finalScoreEl = document.getElementById('finalScore');
+
+let state = 'start'; // 'start' | 'playing' | 'over'
+let score = 0;
+let lives = 3;
+let shoes = [];
+let spawnTimer = 0;
+let spawnInterval = 1300;
+let elapsed = 0;
+let danceTimer = 0;
+let poseIndex = 0;
+const poses = ['Y', 'M', 'C', 'A'];
+let shield = { x: 0, y: 0, r: 42 };
+let hitFlash = 0;
+let shakeTime = 0;
+
+function trumpPos() { return { x: W / 2, y: H - 150 }; }
+shield.x = W / 2;
+shield.y = H / 2;
+
+function pointerMove(x, y) { shield.x = x; shield.y = y; }
+canvas.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  if (t) pointerMove(t.clientX, t.clientY);
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  if (t) pointerMove(t.clientX, t.clientY);
+}, { passive: false });
+
+function startGame() {
+  score = 0; lives = 3; shoes = []; spawnTimer = 0; spawnInterval = 1300; elapsed = 0;
+  state = 'playing';
+  overlay.classList.add('hidden');
+  updateHud();
+}
+function tryStart() { if (state !== 'playing') startGame(); }
+overlay.addEventListener('click', tryStart);
+overlay.addEventListener('touchstart', e => { e.preventDefault(); tryStart(); }, { passive: false });
+
+function updateHud() {
+  scoreEl.textContent = score;
+  const full = Math.max(lives, 0);
+  livesEl.textContent = '❤'.repeat(full) + '🖤'.repeat(3 - full);
+}
+
+function spawnShoe() {
+  const edge = Math.floor(Math.random() * 3); // left, right, top
+  let x, y;
+  if (edge === 0) { x = -40; y = Math.random() * H * 0.7; }
+  else if (edge === 1) { x = W + 40; y = Math.random() * H * 0.7; }
+  else { x = Math.random() * W; y = -40; }
+  const target = trumpPos();
+  const tx = target.x + (Math.random() * 90 - 45);
+  const ty = target.y + (Math.random() * 40 - 20);
+  const angle = Math.atan2(ty - y, tx - x);
+  const speed = 170 + Math.min(elapsed / 1000, 40) * 4;
+  shoes.push({
+    x, y,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    rot: Math.random() * Math.PI * 2,
+    rotSpeed: (Math.random() - 0.5) * 8,
+  });
+}
+
+function dist(x1, y1, x2, y2) { return Math.hypot(x1 - x2, y1 - y2); }
+
+function endGame() {
+  state = 'over';
+  finalScoreEl.textContent = `Final score: ${score}`;
+  finalScoreEl.classList.remove('hidden');
+  startBtn.innerHTML = '<strong>Click / Tap to Play Again</strong>';
+  overlay.classList.remove('hidden');
+}
+
+function update(dt) {
+  danceTimer += dt;
+  if (danceTimer > 0.9) { danceTimer = 0; poseIndex = (poseIndex + 1) % 4; }
+
+  if (state !== 'playing') return;
+
+  elapsed += dt * 1000;
+  spawnTimer += dt * 1000;
+  spawnInterval = Math.max(380, 1300 - elapsed / 35);
+  if (spawnTimer > spawnInterval) { spawnTimer = 0; spawnShoe(); }
+
+  const trump = trumpPos();
+  for (let i = shoes.length - 1; i >= 0; i--) {
+    const s = shoes[i];
+    s.x += s.vx * dt; s.y += s.vy * dt; s.rot += s.rotSpeed * dt;
+
+    if (dist(s.x, s.y, shield.x, shield.y) < shield.r) {
+      shoes.splice(i, 1);
+      score++;
+      updateHud();
+      continue;
+    }
+    if (dist(s.x, s.y, trump.x, trump.y) < 55) {
+      shoes.splice(i, 1);
+      lives--;
+      hitFlash = 0.25;
+      shakeTime = 0.3;
+      updateHud();
+      if (lives <= 0) endGame();
+      continue;
+    }
+    if (s.x < -100 || s.x > W + 100 || s.y < -100 || s.y > H + 100) shoes.splice(i, 1);
+  }
+  if (hitFlash > 0) hitFlash -= dt;
+  if (shakeTime > 0) shakeTime -= dt;
+}
+
+const ARM_POSES = {
+  Y: {
+    left:  { elbow: { x: -25, y: -35 }, hand: { x: -45, y: -68 } },
+    right: { elbow: { x: 25,  y: -35 }, hand: { x: 45,  y: -68 } },
+  },
+  M: {
+    left:  { elbow: { x: -38, y: -55 }, hand: { x: -10, y: -22 } },
+    right: { elbow: { x: 38,  y: -55 }, hand: { x: 10,  y: -22 } },
+  },
+  C: {
+    left:  { elbow: { x: 8,   y: -62 }, hand: { x: 36,  y: -50 } },
+    right: { elbow: { x: 34,  y: -12 }, hand: { x: 28,  y: 18 } },
+  },
+  A: {
+    left:  { elbow: { x: -30, y: -68 }, hand: { x: -6,  y: -96 } },
+    right: { elbow: { x: 30,  y: -68 }, hand: { x: 6,   y: -96 } },
+  },
+};
+
+function drawArm(shoulderX, shoulderY, def) {
+  ctx.strokeStyle = '#1b2a4a';
+  ctx.lineWidth = 13;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(shoulderX, shoulderY);
+  ctx.lineTo(shoulderX + def.elbow.x, shoulderY + def.elbow.y);
+  ctx.lineTo(shoulderX + def.hand.x, shoulderY + def.hand.y);
+  ctx.stroke();
+  ctx.fillStyle = '#e8a662';
+  ctx.beginPath();
+  ctx.arc(shoulderX + def.hand.x, shoulderY + def.hand.y, 7, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawTrump() {
+  const { x, y } = trumpPos();
+  const bob = Math.sin((danceTimer / 0.9) * Math.PI * 2) * 4;
+  ctx.save();
+  ctx.translate(x, y + bob);
+  if (hitFlash > 0) ctx.globalAlpha = 0.55 + 0.45 * Math.sin(hitFlash * 50);
+
+  ctx.fillStyle = '#111';
+  ctx.fillRect(-26, 106, 24, 10);
+  ctx.fillRect(2, 106, 24, 10);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(-22, 55, 16, 55);
+  ctx.fillRect(6, 55, 16, 55);
+
+  ctx.fillStyle = '#1b2a4a';
+  ctx.beginPath();
+  ctx.roundRect(-32, -10, 64, 70, 10);
+  ctx.fill();
+
+  ctx.fillStyle = '#c8102e';
+  ctx.beginPath();
+  ctx.moveTo(-6, -8); ctx.lineTo(6, -8); ctx.lineTo(3, 40); ctx.lineTo(0, 48); ctx.lineTo(-3, 40);
+  ctx.closePath(); ctx.fill();
+
+  const pose = poses[poseIndex];
+  drawArm(-32, 0, ARM_POSES[pose].left);
+  drawArm(32, 0, ARM_POSES[pose].right);
+
+  ctx.fillStyle = '#e8a662';
+  ctx.beginPath();
+  ctx.arc(0, -38, 26, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#f2c14e';
+  ctx.beginPath();
+  ctx.moveTo(-26, -46);
+  ctx.quadraticCurveTo(0, -74, 26, -46);
+  ctx.quadraticCurveTo(10, -58, 0, -50);
+  ctx.quadraticCurveTo(-10, -58, -26, -46);
+  ctx.fill();
+
+  ctx.fillStyle = '#7a2e2e';
+  ctx.beginPath();
+  ctx.ellipse(0, -28, 8, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(-9, -40, 2.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(9, -40, 2.5, 0, Math.PI * 2); ctx.fill();
+
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = '#ffd60a';
+  ctx.font = 'bold 48px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText(pose, x, y - 118);
+  ctx.restore();
+}
+
+function drawShoes() {
+  ctx.font = '36px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const s of shoes) {
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(s.rot);
+    ctx.fillText('👞', 0, 0);
+    ctx.restore();
+  }
+}
+
+function drawShield() {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(shield.x, shield.y, shield.r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(120, 200, 255, 0.18)';
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(180, 230, 255, 0.9)';
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(shield.x, shield.y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+  ctx.restore();
+}
+
+function draw() {
+  ctx.save();
+  if (shakeTime > 0) ctx.translate((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10);
+
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#1b263b');
+  grad.addColorStop(1, '#0d1b2a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(-20, -20, W + 40, H + 40);
+
+  ctx.fillStyle = '#14213d';
+  ctx.fillRect(0, H - 90, W, 90);
+
+  drawTrump();
+  drawShoes();
+  drawShield();
+
+  ctx.restore();
+}
+
+let lastTime = 0;
+function loop(ts) {
+  if (!lastTime) lastTime = ts;
+  const dt = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
