@@ -40,7 +40,7 @@
 <div id="overlay">
   <h1>👞 YMCA DODGE 🕺</h1>
   <p>Trump won't stop dancing the YMCA, and the crowd keeps throwing shoes at him.</p>
-  <p>Move your mouse (or drag your finger) to sweep both his hands together — they wave in sync above his head, like his YMCA arms. Slide them over a shoe to swat it away before it lands.</p>
+  <p>The crowd hurls shoes up at him from below. Move your mouse (or drag your finger) to aim his fists — they pump in sync, just like his rally dance. Land a fist on a shoe to punch it back down before it hits him.</p>
   <p id="finalScore" class="hidden"></p>
   <p id="startBtn"><strong>Click / Tap to Start</strong></p>
 </div>
@@ -110,11 +110,11 @@ function noiseBurst(start, dur, gain, filterFreq, filterType) {
   noise.start(start); noise.stop(start + dur);
 }
 
-function playBlockSfx() {
+function playPunchSfx() {
   if (!audioEnabled || !audioCtx) return;
   const t = audioCtx.currentTime;
-  tone(880, t, 0.1, 'triangle', 0.15);
-  tone(1320, t + 0.05, 0.12, 'triangle', 0.13);
+  tone(150, t, 0.09, 'square', 0.22);
+  noiseBurst(t, 0.07, 0.22, 1500, 'lowpass');
 }
 
 function playHitSfx() {
@@ -151,15 +151,20 @@ const UPPER = 62, FORE = 62; // arm segment lengths (UPPER+FORE just exceeds REA
 const HAND_R = 13;           // drawn fist radius
 const BLOCK_R = 34;          // how close a hand must get to swat a shoe away
 const LAND_R = 16;           // how close a shoe gets to its target before it "lands"
+const TRUMP_Y = 170;         // Trump stands near the TOP, facing the player
 
-function trumpPos() { return { x: W / 2, y: H - 150 }; }
+function trumpPos() { return { x: W / 2, y: TRUMP_Y }; }
 function leftShoulder()  { const t = trumpPos(); return { x: t.x - SHOULDER_DX, y: t.y + SHOULDER_Y }; }
 function rightShoulder() { const t = trumpPos(); return { x: t.x + SHOULDER_DX, y: t.y + SHOULDER_Y }; }
 
 // One raw pointer drives a single shared reach offset applied to BOTH hands, so
-// they move together in sync (like his YMCA arms) and stay up above his head.
+// they move together in sync — then both fists PUMP in and out together, like
+// his signature rally fist-pump, to punch shoes coming up from below.
 let pointer = { x: 0, y: 0 };
 let hands = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
+let handOffset = { x: 0, y: 1 };                    // shared reach direction (default: down)
+let fists = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
+let punchTimer = 0;
 
 function pointerMove(x, y) { pointer.x = x; pointer.y = y; }
 
@@ -170,12 +175,25 @@ function computeHands() {
   const d = Math.hypot(dx, dy) || 1;
   const reach = Math.min(d, REACH);
   const ox = dx / d * reach, oy = dy / d * reach;   // shared offset, clamped to reach
+  handOffset.x = ox; handOffset.y = oy;
   hands.left.x  = cx - SHOULDER_DX + ox; hands.left.y  = cy + oy;
   hands.right.x = cx + SHOULDER_DX + ox; hands.right.y = cy + oy;
 }
 
-// Start with both hands raised above his head.
-pointer.x = W / 2; pointer.y = (H - 150) + SHOULDER_Y - 105;
+// Both fists thrust out together along the aim direction and pull back, on a
+// fast rhythm — the fist-pump punch. Fist positions feed both collision + draw.
+function computeFists() {
+  const mag = Math.hypot(handOffset.x, handOffset.y) || 1;
+  const dx = handOffset.x / mag, dy = handOffset.y / mag;
+  const P = 0.42;                                       // ~2.4 pumps/sec
+  const jab = Math.abs(Math.sin((punchTimer / P) * Math.PI));
+  const ext = jab * 20;
+  fists.left.x  = hands.left.x  + dx * ext; fists.left.y  = hands.left.y  + dy * ext;
+  fists.right.x = hands.right.x + dx * ext; fists.right.y = hands.right.y + dy * ext;
+}
+
+// Start with fists aimed down in front of him, toward the incoming shoes.
+pointer.x = W / 2; pointer.y = TRUMP_Y + SHOULDER_Y + 110;
 canvas.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
@@ -214,17 +232,17 @@ function updateHud() {
 // theoretically blockable if a hand gets there in time.
 function reachableTarget() {
   const sh = Math.random() < 0.5 ? leftShoulder() : rightShoulder();
-  const ang = -Math.PI * (0.12 + Math.random() * 0.76); // upper dome: up-left .. up-right
+  const ang = Math.PI * (0.12 + Math.random() * 0.76); // lower dome: down-left .. down-right
   const rr = REACH * (0.4 + Math.random() * 0.55);
   return { x: sh.x + Math.cos(ang) * rr, y: sh.y + Math.sin(ang) * rr };
 }
 
 function spawnShoe() {
-  const edge = Math.floor(Math.random() * 3); // left, right, top
+  const edge = Math.floor(Math.random() * 3); // bottom, lower-left, lower-right
   let x, y;
-  if (edge === 0) { x = -40; y = Math.random() * H * 0.6; }
-  else if (edge === 1) { x = W + 40; y = Math.random() * H * 0.6; }
-  else { x = Math.random() * W; y = -40; }
+  if (edge === 0) { x = -40; y = H * (0.45 + Math.random() * 0.55); }
+  else if (edge === 1) { x = W + 40; y = H * (0.45 + Math.random() * 0.55); }
+  else { x = Math.random() * W; y = H + 40; }
   const tgt = reachableTarget();
   const angle = Math.atan2(tgt.y - y, tgt.x - x);
   const speed = 170 + Math.min(elapsed / 1000, 40) * 4;
@@ -252,7 +270,9 @@ function update(dt) {
   danceTimer += dt;
   if (danceTimer > 0.9) { danceTimer = 0; poseIndex = (poseIndex + 1) % 4; }
 
+  punchTimer += dt;
   computeHands();
+  computeFists();
 
   if (state !== 'playing') return;
 
@@ -265,16 +285,25 @@ function update(dt) {
     const s = shoes[i];
     s.x += s.vx * dt; s.y += s.vy * dt; s.rot += s.rotSpeed * dt;
 
-    // Swatted away by either of his synced hands.
-    if (dist(s.x, s.y, hands.left.x, hands.left.y) < BLOCK_R ||
-        dist(s.x, s.y, hands.right.x, hands.right.y) < BLOCK_R) {
-      shoes.splice(i, 1);
-      score++;
-      updateHud();
-      playBlockSfx();
+    // Already punched — just let it tumble off-screen.
+    if (s.knocked) {
+      if (s.x < -120 || s.x > W + 120 || s.y < -120 || s.y > H + 120) shoes.splice(i, 1);
       continue;
     }
-    // Reached the spot it was aimed at without being blocked — it lands on him.
+
+    // Punched by either fist — knock it back down toward the crowd.
+    if (dist(s.x, s.y, fists.left.x, fists.left.y) < BLOCK_R ||
+        dist(s.x, s.y, fists.right.x, fists.right.y) < BLOCK_R) {
+      s.knocked = true;
+      s.vx = (Math.random() * 2 - 1) * 180;
+      s.vy = 360;
+      s.rotSpeed = (Math.random() - 0.5) * 24;
+      score++;
+      updateHud();
+      playPunchSfx();
+      continue;
+    }
+    // Reached the spot it was aimed at without being punched — it lands on him.
     if (dist(s.x, s.y, s.tx, s.ty) < LAND_R) {
       shoes.splice(i, 1);
       lives--;
@@ -326,14 +355,14 @@ function drawOneArm(sh, hx, hy, bend, active) {
   drawFist(hx, hy, active ? HAND_R + 1 : HAND_R, active);
 }
 
-// Both arms reach to their synced hands — raised above the head, swaying together.
+// Both arms reach to the pumping fists — thrusting down together, punching.
 function drawArms() {
   const ls = leftShoulder(), rs = rightShoulder();
-  drawOneArm(ls, hands.left.x,  hands.left.y,  -1, true);
-  drawOneArm(rs, hands.right.x, hands.right.y,  1, true);
+  drawOneArm(ls, fists.left.x,  fists.left.y,  -1, true);
+  drawOneArm(rs, fists.right.x, fists.right.y,  1, true);
 }
 
-// Faint dome showing how far his hands can reach — where shoes will be aimed.
+// Faint dome (below him) showing how far his fists reach — where shoes are aimed.
 function drawReachHint() {
   ctx.save();
   ctx.setLineDash([5, 9]);
@@ -341,7 +370,7 @@ function drawReachHint() {
   ctx.strokeStyle = 'rgba(120,200,255,0.12)';
   for (const sh of [leftShoulder(), rightShoulder()]) {
     ctx.beginPath();
-    ctx.arc(sh.x, sh.y, REACH, Math.PI, Math.PI * 2);
+    ctx.arc(sh.x, sh.y, REACH, 0, Math.PI);
     ctx.stroke();
   }
   ctx.restore();
