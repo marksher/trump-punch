@@ -81,7 +81,7 @@
   <div class="hud-pill"><span class="hud-label">SHOES BLOCKED</span><span class="hud-value" id="score">0</span></div>
   <div class="hud-pill hud-lives"><span class="hud-label">RALLY ENERGY</span><span class="hud-value" id="lives">❤❤❤</span></div>
 </div>
-<button id="muteBtn" aria-label="Toggle sound">🔊</button>
+<button id="muteBtn" aria-label="Turn sound on" title="Turn sound on">🔇</button>
 <div id="handControlWrap" aria-label="Right hand height control">
   <span class="control-arrow">▲</span>
   <input id="handControl" type="range" min="0" max="100" value="50" aria-label="Right hand height">
@@ -113,7 +113,7 @@ const muteBtn = document.getElementById('muteBtn');
 const handControl = document.getElementById('handControl');
 
 let audioCtx = null;
-let audioEnabled = true;
+let audioEnabled = false;
 function ensureAudio() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -129,8 +129,14 @@ function stopBg() { try { bgPlayer && bgPlayer.stop(); } catch (e) {} }
 muteBtn.addEventListener('click', () => {
   audioEnabled = !audioEnabled;
   muteBtn.textContent = audioEnabled ? '🔊' : '🔇';
+  muteBtn.setAttribute('aria-label', audioEnabled ? 'Turn sound off' : 'Turn sound on');
+  muteBtn.title = audioEnabled ? 'Turn sound off' : 'Turn sound on';
   if (!audioEnabled) stopBg();
-  else if (state === 'playing') startBg();
+  else {
+    ensureAudio();
+    if (window.Tone && Tone.start) { try { Tone.start(); } catch (e) {} }
+    if (state === 'playing') startBg();
+  }
 });
 
 function tone(freq, start, dur, type, gain) {
@@ -251,11 +257,13 @@ function startGame() {
   updateHud();
 }
 function tryStart() {
-  ensureAudio();
-  // Resume the MIDI synth's audio context inside the user gesture, else the
-  // track advances silently under the browser autoplay policy.
-  if (window.Tone && Tone.start) { try { Tone.start(); } catch (e) {} }
-  startBg();
+  if (audioEnabled) {
+    ensureAudio();
+    // Resume the MIDI synth's audio context inside the user gesture, else the
+    // track advances silently under the browser autoplay policy.
+    if (window.Tone && Tone.start) { try { Tone.start(); } catch (e) {} }
+    startBg();
+  }
   if (state !== 'playing') startGame();
 }
 overlay.addEventListener('click', tryStart);
@@ -267,24 +275,29 @@ function updateHud() {
   livesEl.textContent = '❤'.repeat(full) + '🖤'.repeat(3 - full);
 }
 
-// Aim shoes at the two possible fist lanes. Their height varies, so the
-// scroller has to be used instead of letting the current pose block everything.
+// Aim shoes at randomized micro-targets across the visible figure. Their
+// height varies from hairline to lower torso, so the scroller has to be used
+// instead of letting the current pose block everything.
 function reachableTarget() {
   if (Math.random() < 0.22) {
     const t = trumpPos();
     return { x: t.x + (Math.random() - 0.5) * podiumHalf() * 1.5, y: podiumTop() + 55 * figureScale() + Math.random() * 70 * figureScale() };
   }
   const s = figureScale();
-  const side = Math.random() < 0.5 ? 'left' : 'right';
   const t = trumpPos();
+  const side = Math.random() < 0.5 ? -1 : 1;
+  const microX = 42 + Math.random() * 70;
+  const bodyTop = t.y - 68 * s;
+  const bodyBottom = podiumTop() - 18 * s;
   return {
-    x: t.x + (side === 'left' ? -HAND_X : HAND_X) * s + (Math.random() - 0.5) * 16 * s,
-    y: t.y - (8 + Math.random() * 52) * s,
+    x: t.x + side * microX * s,
+    y: bodyTop + Math.random() * (bodyBottom - bodyTop),
   };
 }
 
 function spawnShoe() {
-  const edge = Math.floor(Math.random() * 3); // bottom, lower-left, lower-right
+  const throwRoll = Math.random();
+  const edge = throwRoll < 0.60 ? 0 : throwRoll < 0.80 ? 1 : 2; // mostly left, then right, then bottom
   let x, y;
   if (edge === 0) { x = -42; y = H * (0.55 + Math.random() * 0.35); }
   else if (edge === 1) { x = W + 42; y = H * (0.55 + Math.random() * 0.35); }
