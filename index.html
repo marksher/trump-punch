@@ -545,7 +545,7 @@ function drawOneArm(side) {
       : { sx: 0, sy: 0, sw: 627, sh: 627, fromX: 165, fromY: 205, toX: 460, toY: 540 };
     const forearm = side === 'left'
       ? { sx: 627, sy: 627, sw: 627, sh: 627, fromX: 423, fromY: 493, toX: 353, toY: 123 }
-      : { sx: 627, sy: 0, sw: 627, sh: 627, fromX: 820, fromY: 535, toX: 990, toY: 220 };
+      : { sx: 627, sy: 0, sw: 627, sh: 627, fromX: 193, fromY: 535, toX: 363, toY: 220 };
     ctx.save();
     ctx.globalAlpha = hitFlash > 0 ? 0.55 + 0.45 * Math.sin(hitFlash * 50) : 1;
     drawArmSegment(upper, pose.shoulder, pose.elbow);
