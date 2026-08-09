@@ -213,8 +213,8 @@ let lockedShoulders = { left: null, right: null };
 // amount in the opposite direction, keeping the dance pose visibly linked.
 const SHOULDER_DX = 48;
 const SHOULDER_Y = 14;
-const ELBOW_DX = 58;
-const ELBOW_Y = 46;
+const ARM_UPPER_LENGTH = 78;
+const ARM_FOREARM_LENGTH = 82;
 const HAND_R = 13;
 const BLOCK_R = 35;
 const LAND_R = 18;
@@ -234,12 +234,39 @@ function podiumTop() { return trumpPos().y + PODIUM_OFFSET * figureScale(); }
 function podiumHalf() { return PODIUM_HALF * figureScale(); }
 function leftShoulder()  { const t = trumpPos(), s = figureScale(); return { x: t.x - SHOULDER_DX * s, y: t.y + SHOULDER_Y * s }; }
 function rightShoulder() { const t = trumpPos(), s = figureScale(); return { x: t.x + SHOULDER_DX * s, y: t.y + SHOULDER_Y * s }; }
-function leftElbow()  { const t = trumpPos(), s = figureScale(); return { x: t.x - ELBOW_DX * s, y: t.y + ELBOW_Y * s }; }
-function rightElbow() { const t = trumpPos(), s = figureScale(); return { x: t.x + ELBOW_DX * s, y: t.y + ELBOW_Y * s }; }
 function sideDisabled(side) { return sideHits[side] >= MAX_SIDE_HITS; }
 function shoulderFor(side) {
   if (lockedShoulders[side]) return lockedShoulders[side];
   return side === 'left' ? leftShoulder() : rightShoulder();
+}
+
+// The target fist is the end effector. The elbow is solved from the two fixed
+// bone lengths, so the upper arm turns at the shoulder and the forearm turns
+// at the elbow instead of scaling one whole arm image.
+function armPose(side) {
+  const shoulder = shoulderFor(side);
+  const target = fists[side];
+  const s = figureScale();
+  const upperLength = ARM_UPPER_LENGTH * s;
+  const forearmLength = ARM_FOREARM_LENGTH * s;
+  const dx = target.x - shoulder.x;
+  const dy = target.y - shoulder.y;
+  const distance = Math.hypot(dx, dy);
+  const reachableDistance = Math.max(
+    Math.abs(upperLength - forearmLength) + 0.01,
+    Math.min(upperLength + forearmLength - 0.01, distance),
+  );
+  const direction = Math.atan2(dy, dx);
+  const bend = Math.acos(
+    (upperLength * upperLength + reachableDistance * reachableDistance - forearmLength * forearmLength)
+      / (2 * upperLength * reachableDistance),
+  );
+  const elbowAngle = side === 'left' ? direction - bend : direction + bend;
+  const elbow = {
+    x: shoulder.x + Math.cos(elbowAngle) * upperLength,
+    y: shoulder.y + Math.sin(elbowAngle) * upperLength,
+  };
+  return { shoulder, elbow, wrist: target };
 }
 
 let fists = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
@@ -482,36 +509,47 @@ function drawHangingArm(sh, side) {
   ctx.restore();
 }
 
-function drawOneArm(sh, el, side) {
+function drawArmSegment(segment, from, to) {
+  const sourceDx = segment.toX - segment.fromX;
+  const sourceDy = segment.toY - segment.fromY;
+  const targetDx = to.x - from.x;
+  const targetDy = to.y - from.y;
+  const sourceLength = Math.hypot(sourceDx, sourceDy);
+  const targetLength = Math.hypot(targetDx, targetDy);
+  if (!sourceLength || !targetLength) return;
+  ctx.save();
+  ctx.translate(from.x, from.y);
+  ctx.rotate(Math.atan2(targetDy, targetDx));
+  ctx.scale(targetLength / sourceLength, targetLength / sourceLength);
+  ctx.rotate(-Math.atan2(sourceDy, sourceDx));
+  ctx.drawImage(
+    mrEdwardsArmSegmentsImage,
+    segment.sx, segment.sy, segment.sw, segment.sh,
+    -segment.fromX, -segment.fromY, segment.sw, segment.sh,
+  );
+  ctx.restore();
+}
+
+function drawOneArm(side) {
+  const pose = armPose(side);
+  const sh = pose.shoulder;
   if (sideDisabled(side)) {
     drawHangingArm(sh, side);
     return;
   }
   const f = fists[side];
   const s = figureScale();
-  if (mrEdwardsArmsImage.complete && mrEdwardsArmsImage.naturalWidth) {
-    const source = side === 'left'
-      ? { x: 70, y: 225, w: 430, h: 690, shoulderX: 390, shoulderY: 575, fistX: 105, fistY: 100 }
-      : { x: 900, y: 225, w: 430, h: 690, shoulderX: 65, shoulderY: 575, fistX: 325, fistY: 100 };
-    const sourceDx = source.fistX - source.shoulderX;
-    const sourceDy = source.fistY - source.shoulderY;
-    const targetDx = f.x - sh.x;
-    const targetDy = f.y - sh.y;
-    const lengthScale = Math.hypot(targetDx, targetDy) / Math.hypot(sourceDx, sourceDy);
-    const thicknessScale = Math.max(lengthScale, 0.18 * s);
-    const sourceAngle = Math.atan2(sourceDy, sourceDx);
-    const targetAngle = Math.atan2(targetDy, targetDx);
+  if (mrEdwardsArmSegmentsImage.complete && mrEdwardsArmSegmentsImage.naturalWidth) {
+    const upper = side === 'left'
+      ? { sx: 0, sy: 627, sw: 627, sh: 627, fromX: 470, fromY: 760, toX: 220, toY: 1120 }
+      : { sx: 0, sy: 0, sw: 627, sh: 627, fromX: 165, fromY: 205, toX: 460, toY: 540 };
+    const forearm = side === 'left'
+      ? { sx: 627, sy: 627, sw: 627, sh: 627, fromX: 1050, fromY: 1120, toX: 980, toY: 750 }
+      : { sx: 627, sy: 0, sw: 627, sh: 627, fromX: 820, fromY: 535, toX: 990, toY: 220 };
     ctx.save();
     ctx.globalAlpha = hitFlash > 0 ? 0.55 + 0.45 * Math.sin(hitFlash * 50) : 1;
-    ctx.translate(sh.x, sh.y);
-    ctx.rotate(targetAngle);
-    ctx.scale(lengthScale, thicknessScale);
-    ctx.rotate(-sourceAngle);
-    ctx.drawImage(
-      mrEdwardsArmsImage,
-      source.x, source.y, source.w, source.h,
-      -source.shoulderX, -source.shoulderY, source.w, source.h,
-    );
+    drawArmSegment(upper, pose.shoulder, pose.elbow);
+    drawArmSegment(forearm, pose.elbow, pose.wrist);
     ctx.restore();
     return;
   }
@@ -527,7 +565,7 @@ function drawOneArm(sh, el, side) {
   ctx.shadowBlur = 5 * s;
   ctx.beginPath();
   ctx.moveTo(sh.x, sh.y);
-  ctx.lineTo(el.x, el.y);   // upper arm: fixed
+  ctx.lineTo(pose.elbow.x, pose.elbow.y);
   ctx.lineTo(f.x, f.y);     // forearm: all the motion happens here
   ctx.stroke();
   ctx.shadowColor = 'transparent';
@@ -535,7 +573,7 @@ function drawOneArm(sh, el, side) {
   ctx.lineWidth = 2.5 * s;
   ctx.beginPath();
   ctx.moveTo(sh.x - 2 * s, sh.y - 2 * s);
-  ctx.lineTo(el.x - 2 * s, el.y - 2 * s);
+  ctx.lineTo(pose.elbow.x - 2 * s, pose.elbow.y - 2 * s);
   ctx.lineTo(f.x - 2 * s, f.y - 2 * s);
   ctx.stroke();
   const active = side === 'right';
@@ -543,8 +581,8 @@ function drawOneArm(sh, el, side) {
 }
 
 function drawArms() {
-  drawOneArm(shoulderFor('left'), leftElbow(), 'left');
-  drawOneArm(shoulderFor('right'), rightElbow(), 'right');
+  drawOneArm('left');
+  drawOneArm('right');
 }
 
 // Faint vertical lanes show the scroller's range without covering the photo backdrop.
@@ -721,12 +759,12 @@ function drawShoes() {
 // The supplied painterly rally image does the heavy lifting here. Its speaker
 // is arm-free so the game can draw one controllable pair over the real scene.
 const rallyImage = new Image();
-rallyImage.src = 'assets/rally-crowd-cartoon.png?v=1';
+rallyImage.src = 'assets/rally-exact-arm-free.png?v=1';
 rallyImage.onload = () => { bgCanvas = null; };
 const mrEdwardsImage = new Image();
 mrEdwardsImage.src = 'assets/mr-edwards.png?v=1';
-const mrEdwardsArmsImage = new Image();
-mrEdwardsArmsImage.src = 'assets/mr-edwards-arms-painterly.png?v=1';
+const mrEdwardsArmSegmentsImage = new Image();
+mrEdwardsArmSegmentsImage.src = 'assets/mr-edwards-arm-segments.png?v=1';
 let bgCanvas = null, sceneW = 0, sceneH = 0;
 
 function drawImageCover(g, image) {
