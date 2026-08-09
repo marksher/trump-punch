@@ -541,10 +541,10 @@ function drawOneArm(side) {
   const s = figureScale();
   if (mrEdwardsArmSegmentsImage.complete && mrEdwardsArmSegmentsImage.naturalWidth) {
     const upper = side === 'left'
-      ? { sx: 0, sy: 627, sw: 627, sh: 627, fromX: 470, fromY: 760, toX: 220, toY: 1120 }
+      ? { sx: 0, sy: 627, sw: 627, sh: 627, fromX: 470, fromY: 133, toX: 220, toY: 493 }
       : { sx: 0, sy: 0, sw: 627, sh: 627, fromX: 165, fromY: 205, toX: 460, toY: 540 };
     const forearm = side === 'left'
-      ? { sx: 627, sy: 627, sw: 627, sh: 627, fromX: 1050, fromY: 1120, toX: 980, toY: 750 }
+      ? { sx: 627, sy: 627, sw: 627, sh: 627, fromX: 423, fromY: 493, toX: 353, toY: 123 }
       : { sx: 627, sy: 0, sw: 627, sh: 627, fromX: 820, fromY: 535, toX: 990, toY: 220 };
     ctx.save();
     ctx.globalAlpha = hitFlash > 0 ? 0.55 + 0.45 * Math.sin(hitFlash * 50) : 1;
