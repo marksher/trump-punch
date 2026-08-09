@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>YMCA Dodge</title>
+<!-- MIDI synth (Tone.js + Magenta SoundFont) so the .mid background can play in-browser -->
+<script src="https://cdn.jsdelivr.net/combine/npm/tone@14.7.77,npm/@magenta/music@1.23.1/es6/core.js,npm/focus-visible@5,npm/html-midi-player@1.5.0"></script>
 <style>
   html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; background: #0d1b2a; }
   canvas { display: block; touch-action: none; cursor: none; }
@@ -27,10 +29,12 @@
     width: 42px; height: 42px; border-radius: 50%; border: none;
     background: rgba(0,0,0,0.35); color: #fff; font-size: 20px; cursor: pointer;
   }
+  #midi-bg { display: none; }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+<midi-player id="midi-bg" src="assets/ymca.mid" loop sound-font></midi-player>
 <div id="hud">Score: <span id="score">0</span> &nbsp;&nbsp; <span id="lives">❤❤❤</span></div>
 <button id="muteBtn" aria-label="Toggle sound">🔊</button>
 <div id="overlay">
@@ -61,9 +65,19 @@ function ensureAudio() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   if (audioCtx.state === 'suspended') audioCtx.resume();
 }
+// Background music: the vendored .mid, played on loop via the MIDI synth above.
+const bgPlayer = document.getElementById('midi-bg');
+function startBg() {
+  if (!bgPlayer || !audioEnabled) return;
+  try { if (!bgPlayer.playing) bgPlayer.start(); } catch (e) {}
+}
+function stopBg() { try { bgPlayer && bgPlayer.stop(); } catch (e) {} }
+
 muteBtn.addEventListener('click', () => {
   audioEnabled = !audioEnabled;
   muteBtn.textContent = audioEnabled ? '🔊' : '🔇';
+  if (!audioEnabled) stopBg();
+  else if (state === 'playing') startBg();
 });
 
 function tone(freq, start, dur, type, gain) {
@@ -77,19 +91,6 @@ function tone(freq, start, dur, type, gain) {
   g.gain.exponentialRampToValueAtTime(0.001, start + dur);
   osc.connect(g); g.connect(audioCtx.destination);
   osc.start(start); osc.stop(start + dur + 0.02);
-}
-
-function kick(start) {
-  if (!audioEnabled || !audioCtx) return;
-  const osc = audioCtx.createOscillator();
-  const g = audioCtx.createGain();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(150, start);
-  osc.frequency.exponentialRampToValueAtTime(45, start + 0.15);
-  g.gain.setValueAtTime(0.5, start);
-  g.gain.exponentialRampToValueAtTime(0.001, start + 0.18);
-  osc.connect(g); g.connect(audioCtx.destination);
-  osc.start(start); osc.stop(start + 0.2);
 }
 
 function noiseBurst(start, dur, gain, filterFreq, filterType) {
@@ -107,17 +108,6 @@ function noiseBurst(start, dur, gain, filterFreq, filterType) {
   g.gain.exponentialRampToValueAtTime(0.001, start + dur);
   noise.connect(filt); filt.connect(g); g.connect(audioCtx.destination);
   noise.start(start); noise.stop(start + dur);
-}
-
-// Original chiptune-style beat (not the actual YMCA melody) — one chord per dance pose.
-const BEAT_NOTES = [110, 110, 146.83, 130.81];
-function playBeat(poseIdx) {
-  if (!audioEnabled || !audioCtx) return;
-  const t = audioCtx.currentTime;
-  kick(t);
-  tone(BEAT_NOTES[poseIdx], t, 0.35, 'sawtooth', 0.08);
-  tone(BEAT_NOTES[poseIdx] * 2, t + 0.02, 0.15, 'square', 0.05);
-  noiseBurst(t + 0.45, 0.05, 0.1, 7000, 'highpass');
 }
 
 function playBlockSfx() {
@@ -203,7 +193,7 @@ function startGame() {
   overlay.classList.add('hidden');
   updateHud();
 }
-function tryStart() { ensureAudio(); if (state !== 'playing') startGame(); }
+function tryStart() { ensureAudio(); startBg(); if (state !== 'playing') startGame(); }
 overlay.addEventListener('click', tryStart);
 overlay.addEventListener('touchstart', e => { e.preventDefault(); tryStart(); }, { passive: false });
 
@@ -253,7 +243,7 @@ function endGame() {
 
 function update(dt) {
   danceTimer += dt;
-  if (danceTimer > 0.9) { danceTimer = 0; poseIndex = (poseIndex + 1) % 4; playBeat(poseIndex); }
+  if (danceTimer > 0.9) { danceTimer = 0; poseIndex = (poseIndex + 1) % 4; }
 
   computeHands();
 
