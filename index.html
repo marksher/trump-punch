@@ -556,6 +556,7 @@ function drawCartoonTrump() {
 }
 
 function drawTrump() {
+  if (rallyImage.complete && rallyImage.naturalWidth) return;
   if (!mrEdwardsImage.complete || !mrEdwardsImage.naturalWidth) {
     drawCartoonTrump();
     return;
@@ -603,11 +604,10 @@ function drawShoes() {
 }
 
 // --- Rally scene ----------------------------------------------------------
-// The supplied photo does the heavy lifting here. It keeps the crowd,
-// teleprompters, podium, and color palette coherent while the game layer stays
-// responsible for the animated dancer and incoming shoes.
+// The supplied painterly rally image does the heavy lifting here. Its speaker
+// is arm-free so the game can draw one controllable pair over the real scene.
 const rallyImage = new Image();
-rallyImage.src = 'assets/rally-crowd.png?v=1';
+rallyImage.src = 'assets/rally-crowd-cartoon.png?v=1';
 rallyImage.onload = () => { bgCanvas = null; };
 const mrEdwardsImage = new Image();
 mrEdwardsImage.src = 'assets/mr-edwards.png?v=1';
@@ -627,10 +627,7 @@ function buildScene() {
   const b = bgCanvas.getContext('2d');
 
   if (rallyImage.complete && rallyImage.naturalWidth) {
-    b.save();
-    b.filter = 'blur(1.2px) saturate(0.88)';
     drawImageCover(b, rallyImage);
-    b.restore();
   } else {
     const grad = b.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, '#20304d');
@@ -679,7 +676,7 @@ function drawSeal(x, y, r) {
 
 // The podium in front of him: navy face with the seal, wood column, mic.
 function drawPodium() {
-  if (mrEdwardsImage.complete && mrEdwardsImage.naturalWidth) return;
+  if (rallyImage.complete && rallyImage.naturalWidth) return;
   const s = figureScale();
   const cx = W / 2, top = podiumTop(), half = podiumHalf(), ty = trumpPos().y;
   const podiumHeight = 140 * s;
