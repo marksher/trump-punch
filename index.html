@@ -36,7 +36,7 @@
 <div id="overlay">
   <h1>👞 YMCA DODGE 🕺</h1>
   <p>Trump won't stop dancing the YMCA, and the crowd keeps throwing shoes at him.</p>
-  <p>Move your mouse (or drag your finger) to slide the shield around and block every shoe before it lands.</p>
+  <p>Move your mouse (or drag your finger) to steer his hands. His arms can only reach so far — and every shoe is aimed at a spot within reach. Get a hand there in time to swat it away.</p>
   <p id="finalScore" class="hidden"></p>
   <p id="startBtn"><strong>Click / Tap to Start</strong></p>
 </div>
@@ -150,15 +150,41 @@ let elapsed = 0;
 let danceTimer = 0;
 let poseIndex = 0;
 const poses = ['Y', 'M', 'C', 'A'];
-let shield = { x: 0, y: 0, r: 42 };
 let hitFlash = 0;
 let shakeTime = 0;
 
-function trumpPos() { return { x: W / 2, y: H - 150 }; }
-shield.x = W / 2;
-shield.y = H / 2;
+// Trump's reach geometry — his hands can only cover this dome in front of him.
+const SHOULDER_DX = 32;      // horizontal offset of each shoulder from center
+const SHOULDER_Y = 2;        // shoulders sit a hair below the body origin
+const REACH = 122;           // max distance a hand can extend from its shoulder
+const UPPER = 62, FORE = 62; // arm segment lengths (UPPER+FORE just exceeds REACH)
+const HAND_R = 13;           // drawn fist radius
+const BLOCK_R = 34;          // how close a hand must get to swat a shoe away
+const LAND_R = 16;           // how close a shoe gets to its target before it "lands"
 
-function pointerMove(x, y) { shield.x = x; shield.y = y; }
+function trumpPos() { return { x: W / 2, y: H - 150 }; }
+function leftShoulder()  { const t = trumpPos(); return { x: t.x - SHOULDER_DX, y: t.y + SHOULDER_Y }; }
+function rightShoulder() { const t = trumpPos(); return { x: t.x + SHOULDER_DX, y: t.y + SHOULDER_Y }; }
+
+// Raw pointer, and the resolved hand (clamped to whichever shoulder can reach it).
+let pointer = { x: 0, y: 0 };
+let hand = { x: 0, y: 0, side: 'right' };
+
+function pointerMove(x, y) { pointer.x = x; pointer.y = y; }
+
+function computeHand() {
+  const t = trumpPos();
+  const useRight = pointer.x >= t.x;
+  const sh = useRight ? rightShoulder() : leftShoulder();
+  let dx = pointer.x - sh.x, dy = pointer.y - sh.y;
+  const d = Math.hypot(dx, dy) || 1;
+  const reach = Math.min(d, REACH);
+  hand.x = sh.x + dx / d * reach;
+  hand.y = sh.y + dy / d * reach;
+  hand.side = useRight ? 'right' : 'left';
+}
+
+pointer.x = W / 2; pointer.y = H - 260;
 canvas.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
@@ -186,19 +212,26 @@ function updateHud() {
   livesEl.textContent = '❤'.repeat(full) + '🖤'.repeat(3 - full);
 }
 
+// Pick a target point somewhere inside Trump's reach dome, so every shoe is
+// theoretically blockable if a hand gets there in time.
+function reachableTarget() {
+  const sh = Math.random() < 0.5 ? leftShoulder() : rightShoulder();
+  const ang = -Math.PI * (0.12 + Math.random() * 0.76); // upper dome: up-left .. up-right
+  const rr = REACH * (0.4 + Math.random() * 0.55);
+  return { x: sh.x + Math.cos(ang) * rr, y: sh.y + Math.sin(ang) * rr };
+}
+
 function spawnShoe() {
   const edge = Math.floor(Math.random() * 3); // left, right, top
   let x, y;
-  if (edge === 0) { x = -40; y = Math.random() * H * 0.7; }
-  else if (edge === 1) { x = W + 40; y = Math.random() * H * 0.7; }
+  if (edge === 0) { x = -40; y = Math.random() * H * 0.6; }
+  else if (edge === 1) { x = W + 40; y = Math.random() * H * 0.6; }
   else { x = Math.random() * W; y = -40; }
-  const target = trumpPos();
-  const tx = target.x + (Math.random() * 90 - 45);
-  const ty = target.y + (Math.random() * 40 - 20);
-  const angle = Math.atan2(ty - y, tx - x);
+  const tgt = reachableTarget();
+  const angle = Math.atan2(tgt.y - y, tgt.x - x);
   const speed = 170 + Math.min(elapsed / 1000, 40) * 4;
   shoes.push({
-    x, y,
+    x, y, tx: tgt.x, ty: tgt.y,
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
     rot: Math.random() * Math.PI * 2,
@@ -221,6 +254,8 @@ function update(dt) {
   danceTimer += dt;
   if (danceTimer > 0.9) { danceTimer = 0; poseIndex = (poseIndex + 1) % 4; playBeat(poseIndex); }
 
+  computeHand();
+
   if (state !== 'playing') return;
 
   elapsed += dt * 1000;
@@ -228,19 +263,20 @@ function update(dt) {
   spawnInterval = Math.max(380, 1300 - elapsed / 35);
   if (spawnTimer > spawnInterval) { spawnTimer = 0; spawnShoe(); }
 
-  const trump = trumpPos();
   for (let i = shoes.length - 1; i >= 0; i--) {
     const s = shoes[i];
     s.x += s.vx * dt; s.y += s.vy * dt; s.rot += s.rotSpeed * dt;
 
-    if (dist(s.x, s.y, shield.x, shield.y) < shield.r) {
+    // Swatted away by the hand you're steering.
+    if (dist(s.x, s.y, hand.x, hand.y) < BLOCK_R) {
       shoes.splice(i, 1);
       score++;
       updateHud();
       playBlockSfx();
       continue;
     }
-    if (dist(s.x, s.y, trump.x, trump.y) < 55) {
+    // Reached the spot it was aimed at without being blocked — it lands on him.
+    if (dist(s.x, s.y, s.tx, s.ty) < LAND_R) {
       shoes.splice(i, 1);
       lives--;
       hitFlash = 0.25;
@@ -256,38 +292,67 @@ function update(dt) {
   if (shakeTime > 0) shakeTime -= dt;
 }
 
-const ARM_POSES = {
-  Y: {
-    left:  { elbow: { x: -25, y: -35 }, hand: { x: -45, y: -68 } },
-    right: { elbow: { x: 25,  y: -35 }, hand: { x: 45,  y: -68 } },
-  },
-  M: {
-    left:  { elbow: { x: -38, y: -55 }, hand: { x: -10, y: -22 } },
-    right: { elbow: { x: 38,  y: -55 }, hand: { x: 10,  y: -22 } },
-  },
-  C: {
-    left:  { elbow: { x: 8,   y: -62 }, hand: { x: 36,  y: -50 } },
-    right: { elbow: { x: 34,  y: -12 }, hand: { x: 28,  y: 18 } },
-  },
-  A: {
-    left:  { elbow: { x: -30, y: -68 }, hand: { x: -6,  y: -96 } },
-    right: { elbow: { x: 30,  y: -68 }, hand: { x: 6,   y: -96 } },
-  },
-};
+// Two-bone IK: given a shoulder and a hand target (within reach), find the
+// elbow. `bend` flips which way the elbow bulges so each arm bends outward.
+function ikElbow(sx, sy, hx, hy, bend) {
+  const dx = hx - sx, dy = hy - sy;
+  const d0 = Math.hypot(dx, dy) || 1;
+  const nx = dx / d0, ny = dy / d0;
+  const d = Math.min(d0, UPPER + FORE - 1);
+  const a = (d * d + UPPER * UPPER - FORE * FORE) / (2 * d);
+  const h = Math.sqrt(Math.max(0, UPPER * UPPER - a * a));
+  const bx = sx + nx * a, by = sy + ny * a;
+  return { x: bx - ny * h * bend, y: by + nx * h * bend };
+}
 
-function drawArm(shoulderX, shoulderY, def) {
-  ctx.strokeStyle = '#1b2a4a';
-  ctx.lineWidth = 13;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(shoulderX, shoulderY);
-  ctx.lineTo(shoulderX + def.elbow.x, shoulderY + def.elbow.y);
-  ctx.lineTo(shoulderX + def.hand.x, shoulderY + def.hand.y);
-  ctx.stroke();
+function drawFist(x, y, r, active) {
   ctx.fillStyle = '#e8a662';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = active ? 3 : 2;
+  ctx.strokeStyle = active ? 'rgba(255,214,10,0.95)' : 'rgba(255,255,255,0.7)';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+}
+
+function drawOneArm(sh, hx, hy, bend, active) {
+  const e = ikElbow(sh.x, sh.y, hx, hy, bend);
+  ctx.strokeStyle = '#1b2a4a';
+  ctx.lineWidth = 14;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.arc(shoulderX + def.hand.x, shoulderY + def.hand.y, 7, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.moveTo(sh.x, sh.y);
+  ctx.lineTo(e.x, e.y);
+  ctx.lineTo(hx, hy);
+  ctx.stroke();
+  drawFist(hx, hy, active ? HAND_R + 1 : HAND_R, active);
+}
+
+// The arm on the side of the pointer reaches for the hand; the other rests.
+function drawArms() {
+  const ls = leftShoulder(), rs = rightShoulder();
+  const restL = { x: ls.x - 6, y: ls.y + 58 };
+  const restR = { x: rs.x + 6, y: rs.y + 58 };
+  if (hand.side === 'right') {
+    drawOneArm(ls, restL.x, restL.y, -1, false);
+    drawOneArm(rs, hand.x, hand.y, 1, true);
+  } else {
+    drawOneArm(rs, restR.x, restR.y, 1, false);
+    drawOneArm(ls, hand.x, hand.y, -1, true);
+  }
+}
+
+// Faint dome showing how far his hands can reach — where shoes will be aimed.
+function drawReachHint() {
+  ctx.save();
+  ctx.setLineDash([5, 9]);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(120,200,255,0.12)';
+  for (const sh of [leftShoulder(), rightShoulder()]) {
+    ctx.beginPath();
+    ctx.arc(sh.x, sh.y, REACH, Math.PI, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawTrump() {
@@ -315,8 +380,6 @@ function drawTrump() {
   ctx.closePath(); ctx.fill();
 
   const pose = poses[poseIndex];
-  drawArm(-32, 0, ARM_POSES[pose].left);
-  drawArm(32, 0, ARM_POSES[pose].right);
 
   ctx.fillStyle = '#e8a662';
   ctx.beginPath();
@@ -364,22 +427,6 @@ function drawShoes() {
   }
 }
 
-function drawShield() {
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(shield.x, shield.y, shield.r, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(120, 200, 255, 0.18)';
-  ctx.fill();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = 'rgba(180, 230, 255, 0.9)';
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(shield.x, shield.y, 4, 0, Math.PI * 2);
-  ctx.fillStyle = '#fff';
-  ctx.fill();
-  ctx.restore();
-}
-
 function draw() {
   ctx.save();
   if (shakeTime > 0) ctx.translate((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10);
@@ -393,9 +440,10 @@ function draw() {
   ctx.fillStyle = '#14213d';
   ctx.fillRect(0, H - 90, W, 90);
 
+  drawReachHint();
   drawTrump();
   drawShoes();
-  drawShield();
+  drawArms();
 
   ctx.restore();
 }
