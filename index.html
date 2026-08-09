@@ -23,12 +23,12 @@
     letter-spacing: 1.5px;
   }
   .hud-value { font-size: 20px; text-shadow: 2px 2px 0 #000; letter-spacing: 1px; }
-  .hud-lives { min-width: 132px; }
+  .hud-lives { min-width: 170px; }
   #lives { letter-spacing: 2px; }
   @media (max-width: 520px) {
     #hud { top: 10px; left: 10px; gap: 6px; }
     .hud-pill { min-width: 80px; padding: 7px 9px 6px; }
-    .hud-lives { min-width: 112px; }
+    .hud-lives { min-width: 145px; }
     .hud-value { font-size: 16px; }
   }
   #overlay {
@@ -79,7 +79,7 @@
 <midi-player id="midi-bg" src="assets/ymca.mid" loop sound-font></midi-player>
 <div id="hud">
   <div class="hud-pill"><span class="hud-label">SHOES BLOCKED</span><span class="hud-value" id="score">0</span></div>
-  <div class="hud-pill hud-lives"><span class="hud-label">RALLY ENERGY</span><span class="hud-value" id="lives">❤❤❤</span></div>
+  <div class="hud-pill hud-lives"><span class="hud-label">ARM INTEGRITY</span><span class="hud-value" id="lives">L ❤❤❤ R ❤❤❤</span></div>
 </div>
 <button id="muteBtn" aria-label="Turn sound on" title="Turn sound on">🔇</button>
 <div id="handControlWrap" aria-label="Right hand height control">
@@ -198,7 +198,6 @@ function playGameOverSfx() {
 
 let state = 'start'; // 'start' | 'playing' | 'over'
 let score = 0;
-let lives = 3;
 let shoes = [];
 let spawnTimer = 0;
 let spawnInterval = 1300;
@@ -206,11 +205,14 @@ let elapsed = 0;
 let danceTimer = 0;
 let hitFlash = 0;
 let shakeTime = 0;
+const MAX_SIDE_HITS = 3;
+let sideHits = { left: 0, right: 0 };
+let lockedShoulders = { left: null, right: null };
 
 // The scroller sets the right fist height. The left fist mirrors the same
 // amount in the opposite direction, keeping the dance pose visibly linked.
-const SHOULDER_DX = 42;
-const SHOULDER_Y = 7;
+const SHOULDER_DX = 48;
+const SHOULDER_Y = 14;
 const ELBOW_DX = 58;
 const ELBOW_Y = 46;
 const HAND_R = 13;
@@ -234,6 +236,11 @@ function leftShoulder()  { const t = trumpPos(), s = figureScale(); return { x: 
 function rightShoulder() { const t = trumpPos(), s = figureScale(); return { x: t.x + SHOULDER_DX * s, y: t.y + SHOULDER_Y * s }; }
 function leftElbow()  { const t = trumpPos(), s = figureScale(); return { x: t.x - ELBOW_DX * s, y: t.y + ELBOW_Y * s }; }
 function rightElbow() { const t = trumpPos(), s = figureScale(); return { x: t.x + ELBOW_DX * s, y: t.y + ELBOW_Y * s }; }
+function sideDisabled(side) { return sideHits[side] >= MAX_SIDE_HITS; }
+function shoulderFor(side) {
+  if (lockedShoulders[side]) return lockedShoulders[side];
+  return side === 'left' ? leftShoulder() : rightShoulder();
+}
 
 let fists = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
 let handHeight = Number(handControl.value);
@@ -251,7 +258,13 @@ function computeFists() {
 }
 
 function startGame() {
-  score = 0; lives = 3; shoes = []; spawnTimer = 0; spawnInterval = 1300; elapsed = 0;
+  score = 0;
+  sideHits = { left: 0, right: 0 };
+  lockedShoulders = { left: null, right: null };
+  shoes = [];
+  spawnTimer = 0;
+  spawnInterval = 1300;
+  elapsed = 0;
   state = 'playing';
   overlay.classList.add('hidden');
   updateHud();
@@ -271,38 +284,64 @@ overlay.addEventListener('touchstart', e => { e.preventDefault(); tryStart(); },
 
 function updateHud() {
   scoreEl.textContent = score;
-  const full = Math.max(lives, 0);
-  livesEl.textContent = '❤'.repeat(full) + '🖤'.repeat(3 - full);
+  const status = side => sideDisabled(side)
+    ? 'LOCK'
+    : '❤'.repeat(MAX_SIDE_HITS - sideHits[side]) + '🖤'.repeat(sideHits[side]);
+  livesEl.textContent = `L ${status('left')}  R ${status('right')}`;
 }
 
 // Aim shoes at randomized micro-targets inside the two hand sweep envelopes.
 // Each target is reachable by setting the scroller to its height, but paired
 // left/right throws can still demand opposite settings at the same time.
-function reachableTarget() {
+function reachableTarget(preferredSide) {
   const s = figureScale();
   const t = trumpPos();
-  const side = Math.random() < 0.5 ? -1 : 1;
+  const activeSides = ['left', 'right'].filter(side => !sideDisabled(side));
+  if (!activeSides.length) return null;
+  const targetSide = preferredSide && !sideDisabled(preferredSide)
+    ? preferredSide
+    : activeSides[Math.floor(Math.random() * activeSides.length)];
+  const side = targetSide === 'left' ? -1 : 1;
   const microX = HAND_X - 12 + Math.random() * 24;
   const handTop = t.y + (HAND_CENTER_Y - HAND_TRAVEL_Y) * s;
   const handBottom = t.y + (HAND_CENTER_Y + HAND_TRAVEL_Y) * s;
   return {
     x: t.x + side * microX * s,
     y: handTop + Math.random() * (handBottom - handTop),
+    side: targetSide,
   };
 }
 
 function spawnShoe() {
-  const throwRoll = Math.random();
-  const edge = throwRoll < 0.60 ? 0 : throwRoll < 0.80 ? 1 : 2; // mostly left, then right, then bottom
+  const activeSides = ['left', 'right'].filter(side => !sideDisabled(side));
+  if (!activeSides.length) return;
+  let edge;
+  let entrySide = null;
+  if (activeSides.length === 1) {
+    const onlySide = activeSides[0];
+    if (Math.random() < 0.72) {
+      entrySide = onlySide;
+      edge = onlySide === 'left' ? 0 : 1;
+    } else {
+      edge = 2;
+    }
+  } else {
+    const throwRoll = Math.random();
+    edge = throwRoll < 0.58 ? 0 : throwRoll < 0.80 ? 1 : 2;
+    entrySide = edge === 0 ? 'left' : edge === 1 ? 'right' : null;
+  }
   let x, y;
   if (edge === 0) { x = -42; y = H * (0.55 + Math.random() * 0.35); }
   else if (edge === 1) { x = W + 42; y = H * (0.55 + Math.random() * 0.35); }
   else { x = W * (0.08 + Math.random() * 0.84); y = H + 42; }
-  const tgt = reachableTarget();
+  const tgt = reachableTarget(entrySide);
+  if (!tgt) return;
   const angle = Math.atan2(tgt.y - y, tgt.x - x);
   const speed = 170 + Math.min(elapsed / 1000, 40) * 4;
   shoes.push({
     x, y, tx: tgt.x, ty: tgt.y,
+    side: tgt.side,
+    entrySide: entrySide || tgt.side,
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
     rot: Math.random() * Math.PI * 2,
@@ -311,6 +350,17 @@ function spawnShoe() {
 }
 
 function dist(x1, y1, x2, y2) { return Math.hypot(x1 - x2, y1 - y2); }
+
+function registerSideHit(side) {
+  if (!side || sideDisabled(side)) return;
+  sideHits[side]++;
+  if (sideDisabled(side)) {
+    lockedShoulders[side] = side === 'left' ? leftShoulder() : rightShoulder();
+    shoes = shoes.filter(shoe => shoe.entrySide !== side);
+  }
+  updateHud();
+  if (sideDisabled('left') && sideDisabled('right')) endGame();
+}
 
 function endGame() {
   state = 'over';
@@ -345,8 +395,9 @@ function update(dt) {
 
     // Punched by either fist — knock it back down toward the crowd.
     const blockDistance = BLOCK_R * figureScale();
-    if (dist(s.x, s.y, fists.left.x, fists.left.y) < blockDistance ||
-        dist(s.x, s.y, fists.right.x, fists.right.y) < blockDistance) {
+    const leftBlocks = !sideDisabled('left') && dist(s.x, s.y, fists.left.x, fists.left.y) < blockDistance;
+    const rightBlocks = !sideDisabled('right') && dist(s.x, s.y, fists.right.x, fists.right.y) < blockDistance;
+    if (leftBlocks || rightBlocks) {
       s.knocked = true;
       s.vx = (Math.random() * 2 - 1) * 180;
       s.vy = 360;
@@ -368,12 +419,10 @@ function update(dt) {
         continue;
       }
       shoes.splice(i, 1);
-      lives--;
+      registerSideHit(s.side);
       hitFlash = 0.25;
       shakeTime = 0.3;
-      updateHud();
       playHitSfx();
-      if (lives <= 0) endGame();
       continue;
     }
     if (s.x < -100 || s.x > W + 100 || s.y < -100 || s.y > H + 100) shoes.splice(i, 1);
@@ -403,24 +452,61 @@ function drawFist(x, y, r, active) {
   ctx.restore();
 }
 
+function drawHangingArm(sh, side) {
+  const s = figureScale();
+  const wristX = sh.x + (side === 'left' ? -4 : 4) * s;
+  const wristY = sh.y + 112 * s;
+  const suit = ctx.createLinearGradient(sh.x, sh.y, wristX, wristY);
+  suit.addColorStop(0, '#09152e');
+  suit.addColorStop(0.5, '#223968');
+  suit.addColorStop(1, '#0a1730');
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#050b18';
+  ctx.lineWidth = 33 * s;
+  ctx.beginPath(); ctx.moveTo(sh.x, sh.y); ctx.lineTo(wristX, wristY); ctx.stroke();
+  ctx.strokeStyle = suit;
+  ctx.lineWidth = 26 * s;
+  ctx.beginPath(); ctx.moveTo(sh.x, sh.y); ctx.lineTo(wristX, wristY); ctx.stroke();
+  ctx.strokeStyle = 'rgba(120,153,204,0.32)';
+  ctx.lineWidth = 3 * s;
+  ctx.beginPath(); ctx.moveTo(sh.x - 2 * s, sh.y); ctx.lineTo(wristX - 2 * s, wristY); ctx.stroke();
+  ctx.strokeStyle = '#f3f1eb';
+  ctx.lineWidth = 9 * s;
+  ctx.beginPath(); ctx.moveTo(wristX - 12 * s, wristY - 5 * s); ctx.lineTo(wristX + 12 * s, wristY - 5 * s); ctx.stroke();
+  ctx.restore();
+  ctx.save();
+  ctx.translate(wristX, wristY + 17 * s);
+  ctx.rotate(Math.PI / 2);
+  drawFist(0, 0, HAND_R * s, false);
+  ctx.restore();
+}
+
 function drawOneArm(sh, el, side) {
+  if (sideDisabled(side)) {
+    drawHangingArm(sh, side);
+    return;
+  }
   const f = fists[side];
   const s = figureScale();
   if (mrEdwardsArmsImage.complete && mrEdwardsArmsImage.naturalWidth) {
     const source = side === 'left'
-      ? { x: 35, y: 40, w: 675, h: 760, shoulderX: 595, shoulderY: 600, fistX: 70, fistY: 70 }
-      : { x: 1015, y: 45, w: 670, h: 750, shoulderX: 50, shoulderY: 595, fistX: 590, fistY: 65 };
+      ? { x: 70, y: 225, w: 430, h: 690, shoulderX: 390, shoulderY: 575, fistX: 105, fistY: 100 }
+      : { x: 900, y: 225, w: 430, h: 690, shoulderX: 65, shoulderY: 575, fistX: 325, fistY: 100 };
     const sourceDx = source.fistX - source.shoulderX;
     const sourceDy = source.fistY - source.shoulderY;
     const targetDx = f.x - sh.x;
     const targetDy = f.y - sh.y;
-    const scale = Math.hypot(targetDx, targetDy) / Math.hypot(sourceDx, sourceDy);
-    const angle = Math.atan2(targetDy, targetDx) - Math.atan2(sourceDy, sourceDx);
+    const lengthScale = Math.hypot(targetDx, targetDy) / Math.hypot(sourceDx, sourceDy);
+    const thicknessScale = Math.max(lengthScale, 0.18 * s);
+    const sourceAngle = Math.atan2(sourceDy, sourceDx);
+    const targetAngle = Math.atan2(targetDy, targetDx);
     ctx.save();
     ctx.globalAlpha = hitFlash > 0 ? 0.55 + 0.45 * Math.sin(hitFlash * 50) : 1;
     ctx.translate(sh.x, sh.y);
-    ctx.rotate(angle);
-    ctx.scale(scale, scale);
+    ctx.rotate(targetAngle);
+    ctx.scale(lengthScale, thicknessScale);
+    ctx.rotate(-sourceAngle);
     ctx.drawImage(
       mrEdwardsArmsImage,
       source.x, source.y, source.w, source.h,
@@ -457,8 +543,8 @@ function drawOneArm(sh, el, side) {
 }
 
 function drawArms() {
-  drawOneArm(leftShoulder(), leftElbow(), 'left');
-  drawOneArm(rightShoulder(), rightElbow(), 'right');
+  drawOneArm(shoulderFor('left'), leftElbow(), 'left');
+  drawOneArm(shoulderFor('right'), rightElbow(), 'right');
 }
 
 // Faint vertical lanes show the scroller's range without covering the photo backdrop.
@@ -471,7 +557,12 @@ function drawReachHint() {
   const t = trumpPos();
   const y1 = t.y + (HAND_CENTER_Y - HAND_TRAVEL_Y) * s;
   const y2 = t.y + (HAND_CENTER_Y + HAND_TRAVEL_Y) * s;
-  for (const x of [t.x - HAND_X * s, t.x + HAND_X * s]) {
+  const lanes = [
+    ['left', t.x - HAND_X * s],
+    ['right', t.x + HAND_X * s],
+  ];
+  for (const [side, x] of lanes) {
+    if (sideDisabled(side)) continue;
     ctx.beginPath();
     ctx.moveTo(x, y1);
     ctx.lineTo(x, y2);
@@ -635,7 +726,7 @@ rallyImage.onload = () => { bgCanvas = null; };
 const mrEdwardsImage = new Image();
 mrEdwardsImage.src = 'assets/mr-edwards.png?v=1';
 const mrEdwardsArmsImage = new Image();
-mrEdwardsArmsImage.src = 'assets/mr-edwards-arms.png?v=1';
+mrEdwardsArmsImage.src = 'assets/mr-edwards-arms-painterly.png?v=1';
 let bgCanvas = null, sceneW = 0, sceneH = 0;
 
 function drawImageCover(g, image) {
