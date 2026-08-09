@@ -193,7 +193,14 @@ function startGame() {
   overlay.classList.add('hidden');
   updateHud();
 }
-function tryStart() { ensureAudio(); startBg(); if (state !== 'playing') startGame(); }
+function tryStart() {
+  ensureAudio();
+  // Resume the MIDI synth's audio context inside the user gesture, else the
+  // track advances silently under the browser autoplay policy.
+  if (window.Tone && Tone.start) { try { Tone.start(); } catch (e) {} }
+  startBg();
+  if (state !== 'playing') startGame();
+}
 overlay.addEventListener('click', tryStart);
 overlay.addEventListener('touchstart', e => { e.preventDefault(); tryStart(); }, { passive: false });
 
