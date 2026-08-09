@@ -220,8 +220,8 @@ const TRUMP_Y = 168;
 const PODIUM_HALF = 112;
 const PODIUM_OFFSET = 126;
 const HAND_X = 72;
-const HAND_CENTER_Y = -12;
-const HAND_TRAVEL_Y = 20;
+const HAND_CENTER_Y = 8;
+const HAND_TRAVEL_Y = 48;
 
 function figureScale() { return Math.min(1.55, Math.max(0.86, W / 1050)); }
 function trumpPos() {
@@ -275,23 +275,19 @@ function updateHud() {
   livesEl.textContent = '❤'.repeat(full) + '🖤'.repeat(3 - full);
 }
 
-// Aim shoes at randomized micro-targets across the visible figure. Their
-// height varies from hairline to lower torso, so the scroller has to be used
-// instead of letting the current pose block everything.
+// Aim shoes at randomized micro-targets inside the two hand sweep envelopes.
+// Each target is reachable by setting the scroller to its height, but paired
+// left/right throws can still demand opposite settings at the same time.
 function reachableTarget() {
-  if (Math.random() < 0.22) {
-    const t = trumpPos();
-    return { x: t.x + (Math.random() - 0.5) * podiumHalf() * 1.5, y: podiumTop() + 55 * figureScale() + Math.random() * 70 * figureScale() };
-  }
   const s = figureScale();
   const t = trumpPos();
   const side = Math.random() < 0.5 ? -1 : 1;
-  const microX = 42 + Math.random() * 70;
-  const bodyTop = t.y - 68 * s;
-  const bodyBottom = podiumTop() - 18 * s;
+  const microX = HAND_X - 12 + Math.random() * 24;
+  const handTop = t.y + (HAND_CENTER_Y - HAND_TRAVEL_Y) * s;
+  const handBottom = t.y + (HAND_CENTER_Y + HAND_TRAVEL_Y) * s;
   return {
     x: t.x + side * microX * s,
-    y: bodyTop + Math.random() * (bodyBottom - bodyTop),
+    y: handTop + Math.random() * (handBottom - handTop),
   };
 }
 
@@ -443,7 +439,7 @@ function drawReachHint() {
   ctx.restore();
 }
 
-function drawTrump() {
+function drawCartoonTrump() {
   const { x, y } = trumpPos();
   const s = figureScale();
   const sway = Math.sin(danceTimer * 2.2) * 8;
@@ -541,6 +537,23 @@ function drawTrump() {
   ctx.restore();
 }
 
+function drawTrump() {
+  if (!mrEdwardsImage.complete || !mrEdwardsImage.naturalWidth) {
+    drawCartoonTrump();
+    return;
+  }
+  const { x } = trumpPos();
+  const s = figureScale();
+  const spriteHeight = 465 * s;
+  const spriteWidth = spriteHeight * (mrEdwardsImage.naturalWidth / mrEdwardsImage.naturalHeight);
+  const bob = Math.abs(Math.sin(danceTimer * 2.2)) * 2.5 * s;
+  const spriteTop = podiumTop() - spriteHeight * 0.515 + bob;
+  ctx.save();
+  ctx.globalAlpha = hitFlash > 0 ? 0.55 + 0.45 * Math.sin(hitFlash * 50) : 1;
+  ctx.drawImage(mrEdwardsImage, x - spriteWidth / 2, spriteTop, spriteWidth, spriteHeight);
+  ctx.restore();
+}
+
 function drawShoes() {
   for (const s of shoes) {
     const size = figureScale();
@@ -578,6 +591,8 @@ function drawShoes() {
 const rallyImage = new Image();
 rallyImage.src = 'assets/rally-crowd.png?v=1';
 rallyImage.onload = () => { bgCanvas = null; };
+const mrEdwardsImage = new Image();
+mrEdwardsImage.src = 'assets/mr-edwards.png?v=1';
 let bgCanvas = null, sceneW = 0, sceneH = 0;
 
 function drawImageCover(g, image) {
@@ -646,6 +661,7 @@ function drawSeal(x, y, r) {
 
 // The podium in front of him: navy face with the seal, wood column, mic.
 function drawPodium() {
+  if (mrEdwardsImage.complete && mrEdwardsImage.naturalWidth) return;
   const s = figureScale();
   const cx = W / 2, top = podiumTop(), half = podiumHalf(), ty = trumpPos().y;
   const podiumHeight = 140 * s;
