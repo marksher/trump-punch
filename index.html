@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>YMCA Dodge</title>
+<title>Mr. Edwards Does the Trump Dance</title>
 <!-- MIDI synth (Tone.js + Magenta SoundFont) so the .mid background can play in-browser -->
 <script src="https://cdn.jsdelivr.net/combine/npm/tone@14.7.77,npm/@magenta/music@1.23.1/es6/core.js,npm/focus-visible@5,npm/html-midi-player@1.5.0"></script>
 <style>
@@ -89,9 +89,9 @@
   <span id="handControlLabel">RIGHT HAND</span>
 </div>
 <div id="overlay">
-  <div class="eyebrow">RALLY MODE • SHOE STORM</div>
-  <h1>Trump Dance<br><span>Knock Back the Shoes</span></h1>
-  <p>The crowd is throwing shoes. Keep the dance going and bat them back before they reach the podium.</p>
+  <div class="eyebrow">MR. EDWARDS • FICTIONAL RALLY PRACTICE</div>
+  <h1>Mr. Edwards<br><span>Does the Trump Dance</span></h1>
+  <p>Mr. Edwards is fictional, and he is trying the dance while batting shoes back before they reach the podium.</p>
   <p class="tip">Use the right-side scroller to move his right fist. His left fist mirrors it in the opposite direction.</p>
   <p id="finalScore" class="hidden"></p>
   <p id="startBtn"><strong>Click / Tap to Start</strong></p>
@@ -385,7 +385,11 @@ function update(dt) {
 function drawFist(x, y, r, active) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.fillStyle = '#e8a662';
+  const skin = ctx.createRadialGradient(-r * 0.25, -r * 0.35, r * 0.15, r * 0.2, r * 0.25, r * 1.1);
+  skin.addColorStop(0, '#f7c697');
+  skin.addColorStop(0.58, '#e8a662');
+  skin.addColorStop(1, '#b96f49');
+  ctx.fillStyle = skin;
   ctx.beginPath(); ctx.roundRect(-r * 0.8, -r * 0.72, r * 1.5, r * 1.25, r * 0.38); ctx.fill();
   ctx.beginPath(); ctx.arc(r * 0.58, r * 0.12, r * 0.38, 0, Math.PI * 2); ctx.fill();
   ctx.lineWidth = active ? 3 : 2;
@@ -402,14 +406,28 @@ function drawFist(x, y, r, active) {
 function drawOneArm(sh, el, side) {
   const f = fists[side];
   const s = figureScale();
-  ctx.strokeStyle = '#1b2a4a';
-  ctx.lineWidth = 14 * s;
+  const suit = ctx.createLinearGradient(sh.x, sh.y, f.x, f.y);
+  suit.addColorStop(0, '#0c1733');
+  suit.addColorStop(0.5, '#2d4778');
+  suit.addColorStop(1, '#101d3b');
+  ctx.strokeStyle = suit;
+  ctx.lineWidth = 18 * s;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(0,0,0,0.3)';
+  ctx.shadowBlur = 5 * s;
   ctx.beginPath();
   ctx.moveTo(sh.x, sh.y);
   ctx.lineTo(el.x, el.y);   // upper arm: fixed
   ctx.lineTo(f.x, f.y);     // forearm: all the motion happens here
+  ctx.stroke();
+  ctx.shadowColor = 'transparent';
+  ctx.strokeStyle = 'rgba(120,153,204,0.3)';
+  ctx.lineWidth = 2.5 * s;
+  ctx.beginPath();
+  ctx.moveTo(sh.x - 2 * s, sh.y - 2 * s);
+  ctx.lineTo(el.x - 2 * s, el.y - 2 * s);
+  ctx.lineTo(f.x - 2 * s, f.y - 2 * s);
   ctx.stroke();
   const active = side === 'right';
   drawFist(f.x, f.y, (active ? HAND_R + 2 : HAND_R) * s, active);
