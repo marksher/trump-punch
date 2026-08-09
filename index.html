@@ -8,21 +8,45 @@
 <script src="https://cdn.jsdelivr.net/combine/npm/tone@14.7.77,npm/@magenta/music@1.23.1/es6/core.js,npm/focus-visible@5,npm/html-midi-player@1.5.0"></script>
 <style>
   html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; background: #0d1b2a; }
-  canvas { display: block; touch-action: none; cursor: none; }
+  canvas { display: block; touch-action: none; cursor: crosshair; }
   #hud {
-    position: fixed; top: 12px; left: 14px; color: #fff;
-    font-family: Arial Black, Arial, sans-serif; font-size: 20px;
-    text-shadow: 2px 2px 0 #000; pointer-events: none; letter-spacing: 1px;
+    position: fixed; top: 16px; left: 18px; display: flex; gap: 10px; color: #fff;
+    font-family: Arial Black, Arial, sans-serif; pointer-events: none; z-index: 5;
+  }
+  .hud-pill {
+    min-width: 96px; padding: 9px 13px 8px; box-sizing: border-box;
+    border: 1px solid rgba(255,255,255,0.22); border-radius: 9px;
+    background: rgba(7,14,27,0.78); box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+  }
+  .hud-label {
+    display: block; margin-bottom: 2px; color: #ffcc4d; font: 700 10px Arial, sans-serif;
+    letter-spacing: 1.5px;
+  }
+  .hud-value { font-size: 20px; text-shadow: 2px 2px 0 #000; letter-spacing: 1px; }
+  .hud-lives { min-width: 132px; }
+  #lives { letter-spacing: 2px; }
+  @media (max-width: 520px) {
+    #hud { top: 10px; left: 10px; gap: 6px; }
+    .hud-pill { min-width: 80px; padding: 7px 9px 6px; }
+    .hud-lives { min-width: 112px; }
+    .hud-value { font-size: 16px; }
   }
   #overlay {
     position: fixed; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center;
-    color: #fff; font-family: Arial, sans-serif; background: rgba(0,0,0,0.6);
+    color: #fff; font-family: Arial, sans-serif;
+    background: linear-gradient(180deg, rgba(5,12,24,0.72), rgba(5,10,18,0.9));
     padding: 20px; box-sizing: border-box; cursor: pointer;
   }
-  #overlay h1 { font-size: 40px; margin: 0 0 12px; text-shadow: 2px 2px 0 #000; }
-  #overlay p { font-size: 17px; max-width: 440px; line-height: 1.4; margin: 6px 0; }
-  #startBtn { font-size: 20px; margin-top: 14px; color: #ffd60a; }
+  #overlay .eyebrow { color: #ffcc4d; font: 700 12px Arial, sans-serif; letter-spacing: 2px; }
+  #overlay h1 { font-size: clamp(34px, 6vw, 60px); line-height: 0.98; margin: 10px 0 14px; text-shadow: 3px 3px 0 #000; }
+  #overlay h1 span { color: #ffcc4d; }
+  #overlay p { font-size: 17px; max-width: 480px; line-height: 1.45; margin: 6px 0; }
+  #overlay .tip { color: #d8dfeb; font-size: 14px; }
+  #startBtn {
+    font-size: 18px; margin-top: 18px; padding: 12px 20px; color: #111827;
+    border-radius: 8px; background: #ffcc4d; box-shadow: 0 4px 0 #b48012;
+  }
   .hidden { display: none !important; }
   #muteBtn {
     position: fixed; top: 10px; right: 12px; z-index: 20;
@@ -35,12 +59,16 @@
 <body>
 <canvas id="game"></canvas>
 <midi-player id="midi-bg" src="assets/ymca.mid" loop sound-font></midi-player>
-<div id="hud">Score: <span id="score">0</span> &nbsp;&nbsp; <span id="lives">❤❤❤</span></div>
+<div id="hud">
+  <div class="hud-pill"><span class="hud-label">SHOES BLOCKED</span><span class="hud-value" id="score">0</span></div>
+  <div class="hud-pill hud-lives"><span class="hud-label">RALLY ENERGY</span><span class="hud-value" id="lives">❤❤❤</span></div>
+</div>
 <button id="muteBtn" aria-label="Toggle sound">🔊</button>
 <div id="overlay">
-  <h1>👞 YMCA DODGE 🕺</h1>
-  <p>Trump won't stop working the rally, and the crowd keeps throwing shoes at him.</p>
-  <p>Move your mouse (or drag your finger) to swing his fists. His hands stay shoulder-high and snap at the elbow in alternating jabs — punch shoes out of the air before they reach his head. Anything thrown low just bounces off the podium.</p>
+  <div class="eyebrow">RALLY MODE • SHOE STORM</div>
+  <h1>Trump Dance<br><span>Knock Back the Shoes</span></h1>
+  <p>The crowd is throwing shoes. Keep the dance going and bat them back before they reach the podium.</p>
+  <p class="tip">Move your mouse or drag your finger across the rally to guide the alternating fist pumps.</p>
   <p id="finalScore" class="hidden"></p>
   <p id="startBtn"><strong>Click / Tap to Start</strong></p>
 </div>
@@ -145,32 +173,36 @@ let spawnTimer = 0;
 let spawnInterval = 1300;
 let elapsed = 0;
 let danceTimer = 0;
-let poseIndex = 0;
-const poses = ['Y', 'M', 'C', 'A'];
 let hitFlash = 0;
 let shakeTime = 0;
 
 // Arm geometry — the upper arms never move; ALL the motion is a rotation at
 // the elbow, so the fists ride short arcs and hold roughly shoulder height.
-const SHOULDER_DX = 30;      // where the upper arms leave the torso
+const SHOULDER_DX = 30;      // base geometry; figureScale makes the rally read at desktop size
 const SHOULDER_Y = 0;
 const ELBOW_DX = 46;         // elbows flare out beside the torso...
 const ELBOW_Y = 30;          // ...just below the shoulders, and stay put
 const FORE = 58;             // forearm length: the radius of each fist's arc
-const ANG_MIN = -Math.PI * 0.88;  // forearm swing limits — the fists never
-const ANG_MAX = -Math.PI * 0.12;  // drop below the elbows
+const ANG_MIN = -Math.PI * 0.78; // the dance stays around the chest instead of going overhead
+const ANG_MAX = Math.PI * 0.72;
 const HAND_R = 13;           // drawn fist radius
 const BLOCK_R = 34;          // how close a fist must get to swat a shoe away
 const LAND_R = 16;           // how close a shoe gets to its target before it "lands"
-const TRUMP_Y = 168;         // Trump stands near the TOP, facing the player
-const PODIUM_HALF = 84;      // the podium shields everything this wide...
-const PODIUM_TOP = TRUMP_Y + 52;  // ...below his chest line
+const TRUMP_Y = 168;         // base vertical position near the top of the rally
+const PODIUM_HALF = 84;       // the podium shields everything this wide...
+const PODIUM_OFFSET = 52;     // ...below his chest line
 
-function trumpPos() { return { x: W / 2, y: TRUMP_Y }; }
-function leftShoulder()  { const t = trumpPos(); return { x: t.x - SHOULDER_DX, y: t.y + SHOULDER_Y }; }
-function rightShoulder() { const t = trumpPos(); return { x: t.x + SHOULDER_DX, y: t.y + SHOULDER_Y }; }
-function leftElbow()  { const t = trumpPos(); return { x: t.x - ELBOW_DX, y: t.y + ELBOW_Y }; }
-function rightElbow() { const t = trumpPos(); return { x: t.x + ELBOW_DX, y: t.y + ELBOW_Y }; }
+function figureScale() { return Math.min(1.55, Math.max(0.86, W / 1050)); }
+function trumpPos() {
+  const s = figureScale();
+  return { x: W / 2 + Math.sin(danceTimer * 2.2) * 5 * s, y: Math.min(H * 0.30, TRUMP_Y * s) };
+}
+function podiumTop() { return trumpPos().y + PODIUM_OFFSET * figureScale(); }
+function podiumHalf() { return PODIUM_HALF * figureScale(); }
+function leftShoulder()  { const t = trumpPos(), s = figureScale(); return { x: t.x - SHOULDER_DX * s, y: t.y + SHOULDER_Y * s }; }
+function rightShoulder() { const t = trumpPos(), s = figureScale(); return { x: t.x + SHOULDER_DX * s, y: t.y + SHOULDER_Y * s }; }
+function leftElbow()  { const t = trumpPos(), s = figureScale(); return { x: t.x - ELBOW_DX * s, y: t.y + ELBOW_Y * s }; }
+function rightElbow() { const t = trumpPos(), s = figureScale(); return { x: t.x + ELBOW_DX * s, y: t.y + ELBOW_Y * s }; }
 
 // One pointer aims both forearms: each rotates at its fixed elbow toward the
 // pointer (clamped shoulder-high), and the fists jab ALTERNATELY — left,
@@ -184,22 +216,24 @@ let punchTimer = 0;
 function pointerMove(x, y) { pointer.x = x; pointer.y = y; }
 
 function computeFists() {
-  const P = 0.5;                                    // seconds per single jab
+  const P = 0.72;                                   // seconds per single subdued fist pump
   const phase = (punchTimer / P) % 2;               // alternating half-beats
-  jabs.left  = phase < 1  ? Math.sin(phase * Math.PI) : 0;
-  jabs.right = phase >= 1 ? Math.sin((phase - 1) * Math.PI) : 0;
+  jabs.left  = phase < 1  ? Math.sin(phase * Math.PI) * 0.72 : 0;
+  jabs.right = phase >= 1 ? Math.sin((phase - 1) * Math.PI) * 0.72 : 0;
+  const s = figureScale();
   for (const [side, el] of [['left', leftElbow()], ['right', rightElbow()]]) {
-    let want = Math.atan2(pointer.y - el.y, pointer.x - el.x);
-    if (want > 0) want = pointer.x < el.x ? ANG_MIN : ANG_MAX;  // pointer below the elbows: swing to the nearest side
-    armAng[side] = Math.min(ANG_MAX, Math.max(ANG_MIN, want));
-    const ext = FORE + jabs[side] * 16;             // the jab is a snap at the elbow
+    const want = Math.atan2(pointer.y - el.y, pointer.x - el.x);
+    const danceAngle = side === 'left' ? 0.18 : 0.04;
+    const aimedAngle = want * 0.70 + danceAngle * 0.30;
+    armAng[side] = Math.min(ANG_MAX, Math.max(ANG_MIN, aimedAngle));
+    const ext = (FORE + jabs[side] * 14) * s;       // the jab is a small pump at the elbow
     fists[side].x = el.x + Math.cos(armAng[side]) * ext;
     fists[side].y = el.y + Math.sin(armAng[side]) * ext;
   }
 }
 
 // Start with the fists raised, guarding his face.
-pointer.x = W / 2; pointer.y = TRUMP_Y - 90;
+pointer.x = W / 2; pointer.y = trumpPos().y - 80 * figureScale();
 canvas.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
@@ -240,20 +274,20 @@ function updateHud() {
 function reachableTarget() {
   if (Math.random() < 0.22) {
     const t = trumpPos();
-    return { x: t.x + (Math.random() - 0.5) * PODIUM_HALF * 1.5, y: PODIUM_TOP + 55 + Math.random() * 70 };
+    return { x: t.x + (Math.random() - 0.5) * podiumHalf() * 1.5, y: podiumTop() + 55 * figureScale() + Math.random() * 70 * figureScale() };
   }
   const el = Math.random() < 0.5 ? leftElbow() : rightElbow();
   const ang = ANG_MIN + Math.random() * (ANG_MAX - ANG_MIN);
-  const rr = FORE * (0.8 + Math.random() * 0.4);
+  const rr = FORE * figureScale() * (0.8 + Math.random() * 0.4);
   return { x: el.x + Math.cos(ang) * rr, y: el.y + Math.sin(ang) * rr };
 }
 
 function spawnShoe() {
   const edge = Math.floor(Math.random() * 3); // bottom, lower-left, lower-right
   let x, y;
-  if (edge === 0) { x = -40; y = H * (0.45 + Math.random() * 0.55); }
-  else if (edge === 1) { x = W + 40; y = H * (0.45 + Math.random() * 0.55); }
-  else { x = Math.random() * W; y = H + 40; }
+  if (edge === 0) { x = -42; y = H * (0.55 + Math.random() * 0.35); }
+  else if (edge === 1) { x = W + 42; y = H * (0.55 + Math.random() * 0.35); }
+  else { x = W * (0.08 + Math.random() * 0.84); y = H + 42; }
   const tgt = reachableTarget();
   const angle = Math.atan2(tgt.y - y, tgt.x - x);
   const speed = 170 + Math.min(elapsed / 1000, 40) * 4;
@@ -279,7 +313,6 @@ function endGame() {
 
 function update(dt) {
   danceTimer += dt;
-  if (danceTimer > 0.9) { danceTimer = 0; poseIndex = (poseIndex + 1) % 4; }
 
   punchTimer += dt;
   computeFists();
@@ -316,7 +349,7 @@ function update(dt) {
     // Reached the spot it was aimed at without being punched.
     if (dist(s.x, s.y, s.tx, s.ty) < LAND_R) {
       // The podium protects him — anything low bounces off harmlessly.
-      if (s.y > PODIUM_TOP && Math.abs(s.x - W / 2) < PODIUM_HALF + 10) {
+      if (s.y > podiumTop() && Math.abs(s.x - W / 2) < podiumHalf() + 10 * figureScale()) {
         s.knocked = true;
         s.vx = (Math.random() * 2 - 1) * 140;
         s.vy = 300;
@@ -340,17 +373,27 @@ function update(dt) {
 }
 
 function drawFist(x, y, r, active) {
+  ctx.save();
+  ctx.translate(x, y);
   ctx.fillStyle = '#e8a662';
-  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-r * 0.8, -r * 0.72, r * 1.5, r * 1.25, r * 0.38); ctx.fill();
+  ctx.beginPath(); ctx.arc(r * 0.58, r * 0.12, r * 0.38, 0, Math.PI * 2); ctx.fill();
   ctx.lineWidth = active ? 3 : 2;
   ctx.strokeStyle = active ? 'rgba(255,214,10,0.95)' : 'rgba(255,255,255,0.7)';
-  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(-r * 0.8, -r * 0.72, r * 1.5, r * 1.25, r * 0.38); ctx.stroke();
+  ctx.strokeStyle = 'rgba(120,60,28,0.42)';
+  ctx.lineWidth = 1.5;
+  for (let i = -0.25; i <= 0.25; i += 0.25) {
+    ctx.beginPath(); ctx.moveTo(r * i, -r * 0.56); ctx.lineTo(r * i, r * 0.02); ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawOneArm(sh, el, side) {
   const f = fists[side];
+  const s = figureScale();
   ctx.strokeStyle = '#1b2a4a';
-  ctx.lineWidth = 14;
+  ctx.lineWidth = 14 * s;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.beginPath();
@@ -359,7 +402,7 @@ function drawOneArm(sh, el, side) {
   ctx.lineTo(f.x, f.y);     // forearm: all the motion happens here
   ctx.stroke();
   const active = jabs[side] > 0.35;
-  drawFist(f.x, f.y, active ? HAND_R + 2 : HAND_R, active);
+  drawFist(f.x, f.y, (active ? HAND_R + 2 : HAND_R) * s, active);
 }
 
 function drawArms() {
@@ -373,9 +416,10 @@ function drawReachHint() {
   ctx.setLineDash([5, 9]);
   ctx.lineWidth = 2;
   ctx.strokeStyle = 'rgba(120,200,255,0.14)';
+  const reach = FORE * figureScale();
   for (const el of [leftElbow(), rightElbow()]) {
     ctx.beginPath();
-    ctx.arc(el.x, el.y, FORE, ANG_MIN, ANG_MAX);
+    ctx.arc(el.x, el.y, reach, ANG_MIN, ANG_MAX);
     ctx.stroke();
   }
   ctx.restore();
@@ -383,65 +427,84 @@ function drawReachHint() {
 
 function drawTrump() {
   const { x, y } = trumpPos();
-  const bob = Math.sin((danceTimer / 0.9) * Math.PI * 2) * 4;
+  const s = figureScale();
+  const bob = Math.sin(danceTimer * 4.4) * 2.5 * s;
+  const lean = Math.sin(danceTimer * 2.2) * 0.025;
   ctx.save();
   ctx.translate(x, y + bob);
+  ctx.rotate(lean);
+  ctx.scale(s, s);
   if (hitFlash > 0) ctx.globalAlpha = 0.55 + 0.45 * Math.sin(hitFlash * 50);
 
   ctx.fillStyle = '#1b2a4a';
-  ctx.beginPath();
-  ctx.roundRect(-32, -10, 64, 70, 10);
-  ctx.fill();
+  ctx.beginPath(); ctx.roundRect(-42, -8, 84, 96, 14); ctx.fill();
+
+  ctx.fillStyle = '#f5f3eb';
+  ctx.beginPath(); ctx.moveTo(-13, -8); ctx.lineTo(13, -8); ctx.lineTo(8, 30); ctx.lineTo(0, 42); ctx.lineTo(-8, 30); ctx.closePath(); ctx.fill();
 
   ctx.fillStyle = '#c8102e';
   ctx.beginPath();
-  ctx.moveTo(-6, -8); ctx.lineTo(6, -8); ctx.lineTo(3, 40); ctx.lineTo(0, 48); ctx.lineTo(-3, 40);
+  ctx.moveTo(-6, -8); ctx.lineTo(6, -8); ctx.lineTo(4, 54); ctx.lineTo(0, 64); ctx.lineTo(-4, 54);
   ctx.closePath(); ctx.fill();
 
-  const pose = poses[poseIndex];
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-31, 2); ctx.lineTo(-9, 38); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(31, 2); ctx.lineTo(9, 38); ctx.stroke();
+  ctx.fillStyle = '#ffcc4d';
+  ctx.beginPath(); ctx.arc(28, 18, 3.5, 0, Math.PI * 2); ctx.fill();
 
   ctx.fillStyle = '#e8a662';
   ctx.beginPath();
-  ctx.arc(0, -38, 26, 0, Math.PI * 2);
+  ctx.arc(0, -43, 30, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = '#f2c14e';
   ctx.beginPath();
-  ctx.moveTo(-26, -46);
-  ctx.quadraticCurveTo(0, -74, 26, -46);
-  ctx.quadraticCurveTo(10, -58, 0, -50);
-  ctx.quadraticCurveTo(-10, -58, -26, -46);
+  ctx.moveTo(-30, -51);
+  ctx.quadraticCurveTo(0, -82, 30, -51);
+  ctx.quadraticCurveTo(10, -65, 0, -54);
+  ctx.quadraticCurveTo(-10, -65, -30, -51);
   ctx.fill();
 
   ctx.fillStyle = '#7a2e2e';
   ctx.beginPath();
-  ctx.ellipse(0, -28, 8, 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -32, 9, 5, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = '#222';
-  ctx.beginPath(); ctx.arc(-9, -40, 2.5, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(9, -40, 2.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-10, -45, 2.8, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(10, -45, 2.8, 0, Math.PI * 2); ctx.fill();
 
-  ctx.restore();
-
-  ctx.save();
-  ctx.globalAlpha = 0.9;
-  ctx.fillStyle = '#ffd60a';
-  ctx.font = 'bold 48px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText(pose, x, y - 118);
   ctx.restore();
 }
 
 function drawShoes() {
-  ctx.font = '36px serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
   for (const s of shoes) {
+    const size = figureScale();
     ctx.save();
+    if (!s.knocked) {
+      const speed = Math.hypot(s.vx, s.vy) || 1;
+      ctx.strokeStyle = 'rgba(255,239,188,0.34)';
+      ctx.lineWidth = 3 * size;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(s.x - (s.vx / speed) * 28 * size, s.y - (s.vy / speed) * 28 * size);
+      ctx.stroke();
+    }
     ctx.translate(s.x, s.y);
     ctx.rotate(s.rot);
-    ctx.fillText('👞', 0, 0);
+    ctx.scale(size, size);
+    ctx.fillStyle = '#1c2028';
+    ctx.beginPath();
+    ctx.moveTo(-20, -7); ctx.lineTo(2, -7); ctx.quadraticCurveTo(7, -6, 10, -1);
+    ctx.quadraticCurveTo(20, 0, 22, 6); ctx.quadraticCurveTo(10, 11, -7, 9);
+    ctx.lineTo(-20, 4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#f1eee5';
+    ctx.beginPath(); ctx.moveTo(-20, 4); ctx.quadraticCurveTo(1, 9, 22, 6); ctx.lineTo(20, 10); ctx.quadraticCurveTo(0, 15, -20, 9); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#d3a75f'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-5, -5); ctx.lineTo(2, 2); ctx.moveTo(0, -5); ctx.lineTo(6, 1); ctx.stroke();
     ctx.restore();
   }
 }
@@ -489,17 +552,19 @@ function drawRail(g, y) {
 
 // Dark glass teleprompter panel on a thin pole, tilted in toward him.
 function drawTeleprompter(g, x, tilt, railY) {
+  const s = figureScale();
+  const ty = trumpPos().y;
   g.fillStyle = '#0a0f18';
-  g.fillRect(x - 3, TRUMP_Y + 30, 6, railY - TRUMP_Y - 30);
+  g.fillRect(x - 3 * s, ty + 30 * s, 6 * s, railY - ty - 30 * s);
   g.save();
-  g.translate(x, TRUMP_Y + 4);
+  g.translate(x, ty + 4 * s);
   g.rotate(tilt);
   g.fillStyle = '#0e1420';
   g.strokeStyle = '#2a3345';
-  g.lineWidth = 3;
-  g.beginPath(); g.roundRect(-52, -34, 104, 68, 8); g.fill(); g.stroke();
+  g.lineWidth = 3 * s;
+  g.beginPath(); g.roundRect(-52 * s, -34 * s, 104 * s, 68 * s, 8 * s); g.fill(); g.stroke();
   g.fillStyle = 'rgba(255,255,255,0.06)';
-  g.beginPath(); g.roundRect(-46, -28, 40, 14, 5); g.fill();
+  g.beginPath(); g.roundRect(-46 * s, -28 * s, 40 * s, 14 * s, 5 * s); g.fill();
   g.restore();
 }
 
@@ -543,7 +608,7 @@ function buildScene() {
   drawSign(b, W * 0.80, H * 0.60, 110, 40, '#ffffff', '#1b3a8b', 'USA', 0.5);
   drawRail(b, railY);
 
-  const px = Math.min(W * 0.30, 340);
+  const px = Math.min(W * 0.30, 340 * figureScale());
   drawTeleprompter(b, W / 2 - px, 0.09, railY);
   drawTeleprompter(b, W / 2 + px, -0.09, railY);
 
@@ -589,29 +654,31 @@ function drawSeal(x, y, r) {
 
 // The podium in front of him: navy face with the seal, wood column, mic.
 function drawPodium() {
-  const cx = W / 2, top = PODIUM_TOP;
+  const s = figureScale();
+  const cx = W / 2, top = podiumTop(), half = podiumHalf(), ty = trumpPos().y;
+  const podiumHeight = 140 * s;
   ctx.fillStyle = '#7a5230';                       // wood base column
-  ctx.fillRect(cx - 46, top + 130, 92, 120);
+  ctx.fillRect(cx - 46 * s, top + 130 * s, 92 * s, 120 * s);
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.fillRect(cx - 46, top + 130, 92, 10);
+  ctx.fillRect(cx - 46 * s, top + 130 * s, 92 * s, 10 * s);
   ctx.fillStyle = '#141f36';                       // navy face, flaring at the base
   ctx.beginPath();
-  ctx.moveTo(cx - PODIUM_HALF, top);
-  ctx.lineTo(cx + PODIUM_HALF, top);
-  ctx.lineTo(cx + PODIUM_HALF + 14, top + 140);
-  ctx.lineTo(cx - PODIUM_HALF - 14, top + 140);
+  ctx.moveTo(cx - half, top);
+  ctx.lineTo(cx + half, top);
+  ctx.lineTo(cx + half + 14 * s, top + podiumHeight);
+  ctx.lineTo(cx - half - 14 * s, top + podiumHeight);
   ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#26406b';                       // top ledge
-  ctx.fillRect(cx - PODIUM_HALF - 6, top - 8, PODIUM_HALF * 2 + 12, 10);
-  drawSeal(cx, top + 72, 44);
+  ctx.fillRect(cx - half - 6 * s, top - 8 * s, half * 2 + 12 * s, 10 * s);
+  drawSeal(cx, top + 72 * s, 44 * s);
   ctx.strokeStyle = '#0a0a0a';                     // mic up to his face
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 3 * s;
   ctx.beginPath();
-  ctx.moveTo(cx - 12, top - 6);
-  ctx.quadraticCurveTo(cx - 22, top - 40, cx - 7, TRUMP_Y - 26);
+  ctx.moveTo(cx - 12 * s, top - 6 * s);
+  ctx.quadraticCurveTo(cx - 22 * s, top - 40 * s, cx - 7 * s, ty - 26 * s);
   ctx.stroke();
   ctx.fillStyle = '#111';
-  ctx.beginPath(); ctx.ellipse(cx - 6, TRUMP_Y - 27, 6, 9, -0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx - 6 * s, ty - 27 * s, 6 * s, 9 * s, -0.3, 0, Math.PI * 2); ctx.fill();
 }
 
 function drawRally() {
