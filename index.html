@@ -36,7 +36,7 @@
 <div id="overlay">
   <h1>👞 YMCA DODGE 🕺</h1>
   <p>Trump won't stop dancing the YMCA, and the crowd keeps throwing shoes at him.</p>
-  <p>Move your mouse (or drag your finger) to steer his hands. His arms can only reach so far — and every shoe is aimed at a spot within reach. Get a hand there in time to swat it away.</p>
+  <p>Move your mouse (or drag your finger) to sweep both his hands together — they wave in sync above his head, like his YMCA arms. Slide them over a shoe to swat it away before it lands.</p>
   <p id="finalScore" class="hidden"></p>
   <p id="startBtn"><strong>Click / Tap to Start</strong></p>
 </div>
@@ -166,25 +166,26 @@ function trumpPos() { return { x: W / 2, y: H - 150 }; }
 function leftShoulder()  { const t = trumpPos(); return { x: t.x - SHOULDER_DX, y: t.y + SHOULDER_Y }; }
 function rightShoulder() { const t = trumpPos(); return { x: t.x + SHOULDER_DX, y: t.y + SHOULDER_Y }; }
 
-// Raw pointer, and the resolved hand (clamped to whichever shoulder can reach it).
+// One raw pointer drives a single shared reach offset applied to BOTH hands, so
+// they move together in sync (like his YMCA arms) and stay up above his head.
 let pointer = { x: 0, y: 0 };
-let hand = { x: 0, y: 0, side: 'right' };
+let hands = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
 
 function pointerMove(x, y) { pointer.x = x; pointer.y = y; }
 
-function computeHand() {
+function computeHands() {
   const t = trumpPos();
-  const useRight = pointer.x >= t.x;
-  const sh = useRight ? rightShoulder() : leftShoulder();
-  let dx = pointer.x - sh.x, dy = pointer.y - sh.y;
+  const cx = t.x, cy = t.y + SHOULDER_Y;           // midpoint between the shoulders
+  let dx = pointer.x - cx, dy = pointer.y - cy;
   const d = Math.hypot(dx, dy) || 1;
   const reach = Math.min(d, REACH);
-  hand.x = sh.x + dx / d * reach;
-  hand.y = sh.y + dy / d * reach;
-  hand.side = useRight ? 'right' : 'left';
+  const ox = dx / d * reach, oy = dy / d * reach;   // shared offset, clamped to reach
+  hands.left.x  = cx - SHOULDER_DX + ox; hands.left.y  = cy + oy;
+  hands.right.x = cx + SHOULDER_DX + ox; hands.right.y = cy + oy;
 }
 
-pointer.x = W / 2; pointer.y = H - 260;
+// Start with both hands raised above his head.
+pointer.x = W / 2; pointer.y = (H - 150) + SHOULDER_Y - 105;
 canvas.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
@@ -254,7 +255,7 @@ function update(dt) {
   danceTimer += dt;
   if (danceTimer > 0.9) { danceTimer = 0; poseIndex = (poseIndex + 1) % 4; playBeat(poseIndex); }
 
-  computeHand();
+  computeHands();
 
   if (state !== 'playing') return;
 
@@ -267,8 +268,9 @@ function update(dt) {
     const s = shoes[i];
     s.x += s.vx * dt; s.y += s.vy * dt; s.rot += s.rotSpeed * dt;
 
-    // Swatted away by the hand you're steering.
-    if (dist(s.x, s.y, hand.x, hand.y) < BLOCK_R) {
+    // Swatted away by either of his synced hands.
+    if (dist(s.x, s.y, hands.left.x, hands.left.y) < BLOCK_R ||
+        dist(s.x, s.y, hands.right.x, hands.right.y) < BLOCK_R) {
       shoes.splice(i, 1);
       score++;
       updateHud();
@@ -327,18 +329,11 @@ function drawOneArm(sh, hx, hy, bend, active) {
   drawFist(hx, hy, active ? HAND_R + 1 : HAND_R, active);
 }
 
-// The arm on the side of the pointer reaches for the hand; the other rests.
+// Both arms reach to their synced hands — raised above the head, swaying together.
 function drawArms() {
   const ls = leftShoulder(), rs = rightShoulder();
-  const restL = { x: ls.x - 6, y: ls.y + 58 };
-  const restR = { x: rs.x + 6, y: rs.y + 58 };
-  if (hand.side === 'right') {
-    drawOneArm(ls, restL.x, restL.y, -1, false);
-    drawOneArm(rs, hand.x, hand.y, 1, true);
-  } else {
-    drawOneArm(rs, restR.x, restR.y, 1, false);
-    drawOneArm(ls, hand.x, hand.y, -1, true);
-  }
+  drawOneArm(ls, hands.left.x,  hands.left.y,  -1, true);
+  drawOneArm(rs, hands.right.x, hands.right.y,  1, true);
 }
 
 // Faint dome showing how far his hands can reach — where shoes will be aimed.
