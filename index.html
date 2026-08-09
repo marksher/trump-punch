@@ -176,21 +176,20 @@ let danceTimer = 0;
 let hitFlash = 0;
 let shakeTime = 0;
 
-// Arm geometry — the upper arms never move; ALL the motion is a rotation at
-// the elbow, so the fists ride short arcs and hold roughly shoulder height.
-const SHOULDER_DX = 30;      // base geometry; figureScale makes the rally read at desktop size
-const SHOULDER_Y = 0;
-const ELBOW_DX = 46;         // elbows flare out beside the torso...
-const ELBOW_Y = 30;          // ...just below the shoulders, and stay put
-const FORE = 58;             // forearm length: the radius of each fist's arc
-const ANG_MIN = -Math.PI * 0.78; // the dance stays around the chest instead of going overhead
-const ANG_MAX = Math.PI * 0.72;
-const HAND_R = 13;           // drawn fist radius
-const BLOCK_R = 34;          // how close a fist must get to swat a shoe away
-const LAND_R = 16;           // how close a shoe gets to its target before it "lands"
-const TRUMP_Y = 168;         // base vertical position near the top of the rally
-const PODIUM_HALF = 84;       // the podium shields everything this wide...
-const PODIUM_OFFSET = 52;     // ...below his chest line
+// The dance keeps both fists around hip height. The pointer only nudges the
+// whole stance left or right so the animation still reads as a slow, subdued
+// alternating pump instead of two arms chasing the cursor.
+const SHOULDER_DX = 42;
+const SHOULDER_Y = 7;
+const ELBOW_DX = 58;
+const ELBOW_Y = 46;
+const FORE = 64;
+const HAND_R = 13;
+const BLOCK_R = 35;
+const LAND_R = 18;
+const TRUMP_Y = 168;
+const PODIUM_HALF = 112;
+const PODIUM_OFFSET = 126;
 
 function figureScale() { return Math.min(1.55, Math.max(0.86, W / 1050)); }
 function trumpPos() {
@@ -214,19 +213,20 @@ let jabs = { left: 0, right: 0 };
 let punchTimer = 0;
 
 function pointerMove(x, y) { pointer.x = x; pointer.y = y; }
+function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+function danceAngle(side) { return side === 'left' ? Math.PI - 0.58 : 0.58; }
 
 function computeFists() {
-  const P = 0.72;                                   // seconds per single subdued fist pump
-  const phase = (punchTimer / P) % 2;               // alternating half-beats
-  jabs.left  = phase < 1  ? Math.sin(phase * Math.PI) * 0.72 : 0;
-  jabs.right = phase >= 1 ? Math.sin((phase - 1) * Math.PI) * 0.72 : 0;
+  const P = 0.74;
+  const phase = (punchTimer / P) % 2;
+  jabs.left  = phase < 1 ? Math.sin(phase * Math.PI) * 0.78 : 0;
+  jabs.right = phase >= 1 ? Math.sin((phase - 1) * Math.PI) * 0.78 : 0;
   const s = figureScale();
+  const t = trumpPos();
+  const aim = clamp((pointer.x - t.x) / (W * 0.42), -1, 1) * 0.22;
   for (const [side, el] of [['left', leftElbow()], ['right', rightElbow()]]) {
-    const want = Math.atan2(pointer.y - el.y, pointer.x - el.x);
-    const danceAngle = side === 'left' ? 0.18 : 0.04;
-    const aimedAngle = want * 0.70 + danceAngle * 0.30;
-    armAng[side] = Math.min(ANG_MAX, Math.max(ANG_MIN, aimedAngle));
-    const ext = (FORE + jabs[side] * 14) * s;       // the jab is a small pump at the elbow
+    armAng[side] = danceAngle(side) + aim;
+    const ext = (FORE + jabs[side] * 18) * s;
     fists[side].x = el.x + Math.cos(armAng[side]) * ext;
     fists[side].y = el.y + Math.sin(armAng[side]) * ext;
   }
@@ -268,17 +268,17 @@ function updateHud() {
   livesEl.textContent = '❤'.repeat(full) + '🖤'.repeat(3 - full);
 }
 
-// Aim shoes at the band the fists can cover (around his head and shoulders) —
-// every one blockable if a fist swings there in time. Some are thrown low,
-// straight at the podium, which shields him.
+// Aim shoes at the two slow fist lanes. A few are thrown low at the podium,
+// which gives the player breathing room without making the scene feel empty.
 function reachableTarget() {
   if (Math.random() < 0.22) {
     const t = trumpPos();
     return { x: t.x + (Math.random() - 0.5) * podiumHalf() * 1.5, y: podiumTop() + 55 * figureScale() + Math.random() * 70 * figureScale() };
   }
-  const el = Math.random() < 0.5 ? leftElbow() : rightElbow();
-  const ang = ANG_MIN + Math.random() * (ANG_MAX - ANG_MIN);
-  const rr = FORE * figureScale() * (0.8 + Math.random() * 0.4);
+  const side = Math.random() < 0.5 ? 'left' : 'right';
+  const el = side === 'left' ? leftElbow() : rightElbow();
+  const ang = danceAngle(side) + (Math.random() - 0.5) * 0.34;
+  const rr = FORE * figureScale() * (0.88 + Math.random() * 0.22);
   return { x: el.x + Math.cos(ang) * rr, y: el.y + Math.sin(ang) * rr };
 }
 
@@ -335,8 +335,9 @@ function update(dt) {
     }
 
     // Punched by either fist — knock it back down toward the crowd.
-    if (dist(s.x, s.y, fists.left.x, fists.left.y) < BLOCK_R ||
-        dist(s.x, s.y, fists.right.x, fists.right.y) < BLOCK_R) {
+    const blockDistance = BLOCK_R * figureScale();
+    if (dist(s.x, s.y, fists.left.x, fists.left.y) < blockDistance ||
+        dist(s.x, s.y, fists.right.x, fists.right.y) < blockDistance) {
       s.knocked = true;
       s.vx = (Math.random() * 2 - 1) * 180;
       s.vy = 360;
@@ -410,16 +411,16 @@ function drawArms() {
   drawOneArm(rightShoulder(), rightElbow(), 'right');
 }
 
-// Faint arcs showing where each fist can swing — the band shoes are aimed at.
+// Faint arcs show the two fist lanes without covering the photo backdrop.
 function drawReachHint() {
   ctx.save();
   ctx.setLineDash([5, 9]);
   ctx.lineWidth = 2;
-  ctx.strokeStyle = 'rgba(120,200,255,0.14)';
+  ctx.strokeStyle = 'rgba(255,204,77,0.18)';
   const reach = FORE * figureScale();
-  for (const el of [leftElbow(), rightElbow()]) {
+  for (const [side, el] of [['left', leftElbow()], ['right', rightElbow()]]) {
     ctx.beginPath();
-    ctx.arc(el.x, el.y, reach, ANG_MIN, ANG_MAX);
+    ctx.arc(el.x, el.y, reach, danceAngle(side) - 0.18, danceAngle(side) + 0.18);
     ctx.stroke();
   }
   ctx.restore();
@@ -428,23 +429,42 @@ function drawReachHint() {
 function drawTrump() {
   const { x, y } = trumpPos();
   const s = figureScale();
-  const bob = Math.sin(danceTimer * 4.4) * 2.5 * s;
-  const lean = Math.sin(danceTimer * 2.2) * 0.025;
+  const sway = Math.sin(danceTimer * 2.2) * 8;
+  const bob = Math.abs(Math.sin(danceTimer * 2.2)) * 2.5;
+  const lean = Math.sin(danceTimer * 2.2) * 0.035;
   ctx.save();
-  ctx.translate(x, y + bob);
+  ctx.translate(x + sway * s * 0.12, y + bob * s);
   ctx.rotate(lean);
   ctx.scale(s, s);
   if (hitFlash > 0) ctx.globalAlpha = 0.55 + 0.45 * Math.sin(hitFlash * 50);
 
-  ctx.fillStyle = '#1b2a4a';
-  ctx.beginPath(); ctx.roundRect(-42, -8, 84, 96, 14); ctx.fill();
+  // Legs and hips are deliberately restrained; the dance rocks without
+  // taking his feet off the ground.
+  ctx.fillStyle = '#0e1b34';
+  ctx.beginPath();
+  ctx.moveTo(-39, 72); ctx.lineTo(-6, 72); ctx.lineTo(-11, 132); ctx.lineTo(-39, 132); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(6, 72); ctx.lineTo(39, 72); ctx.lineTo(39, 132); ctx.lineTo(11, 132); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#111827';
+  ctx.beginPath(); ctx.ellipse(-25, 134, 24, 8, -0.03, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(25, 134, 24, 8, 0.03, 0, Math.PI * 2); ctx.fill();
+
+  const suit = ctx.createLinearGradient(-54, 0, 54, 0);
+  suit.addColorStop(0, '#101c35');
+  suit.addColorStop(0.5, '#243a68');
+  suit.addColorStop(1, '#101c35');
+  ctx.fillStyle = suit;
+  ctx.beginPath();
+  ctx.moveTo(-53, 4); ctx.quadraticCurveTo(-43, -12, -25, -10);
+  ctx.lineTo(25, -10); ctx.quadraticCurveTo(43, -12, 53, 4);
+  ctx.lineTo(42, 94); ctx.quadraticCurveTo(0, 111, -42, 94); ctx.closePath(); ctx.fill();
 
   ctx.fillStyle = '#f5f3eb';
-  ctx.beginPath(); ctx.moveTo(-13, -8); ctx.lineTo(13, -8); ctx.lineTo(8, 30); ctx.lineTo(0, 42); ctx.lineTo(-8, 30); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-15, -10); ctx.lineTo(15, -10); ctx.lineTo(10, 36); ctx.lineTo(0, 47); ctx.lineTo(-10, 36); ctx.closePath(); ctx.fill();
 
   ctx.fillStyle = '#c8102e';
   ctx.beginPath();
-  ctx.moveTo(-6, -8); ctx.lineTo(6, -8); ctx.lineTo(4, 54); ctx.lineTo(0, 64); ctx.lineTo(-4, 54);
+  ctx.moveTo(-6, -10); ctx.lineTo(6, -10); ctx.lineTo(5, 57); ctx.lineTo(0, 69); ctx.lineTo(-5, 57);
   ctx.closePath(); ctx.fill();
 
   ctx.strokeStyle = 'rgba(255,255,255,0.22)';
@@ -454,28 +474,53 @@ function drawTrump() {
   ctx.fillStyle = '#ffcc4d';
   ctx.beginPath(); ctx.arc(28, 18, 3.5, 0, Math.PI * 2); ctx.fill();
 
-  ctx.fillStyle = '#e8a662';
+  ctx.fillStyle = '#dfa06c';
+  ctx.beginPath(); ctx.roundRect(-9, -19, 18, 18, 6); ctx.fill();
+
+  const skin = ctx.createRadialGradient(-9, -53, 4, 6, -39, 34);
+  skin.addColorStop(0, '#f2c08e');
+  skin.addColorStop(1, '#c98251');
+  ctx.fillStyle = skin;
   ctx.beginPath();
-  ctx.arc(0, -43, 30, 0, Math.PI * 2);
+  ctx.ellipse(0, -46, 30, 34, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.fillStyle = '#d89460';
+  ctx.beginPath(); ctx.ellipse(-29, -45, 5, 9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(29, -45, 5, 9, 0, 0, Math.PI * 2); ctx.fill();
 
   ctx.fillStyle = '#f2c14e';
   ctx.beginPath();
-  ctx.moveTo(-30, -51);
-  ctx.quadraticCurveTo(0, -82, 30, -51);
-  ctx.quadraticCurveTo(10, -65, 0, -54);
-  ctx.quadraticCurveTo(-10, -65, -30, -51);
+  ctx.moveTo(-30, -52);
+  ctx.quadraticCurveTo(-8, -84, 26, -64);
+  ctx.quadraticCurveTo(36, -58, 27, -43);
+  ctx.quadraticCurveTo(10, -56, 0, -53);
+  ctx.quadraticCurveTo(-14, -58, -30, -52);
   ctx.fill();
+
+  ctx.strokeStyle = '#7a3b2a';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(-19, -51); ctx.quadraticCurveTo(-10, -56, -2, -52); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(2, -52); ctx.quadraticCurveTo(11, -56, 19, -51); ctx.stroke();
 
   ctx.fillStyle = '#7a2e2e';
   ctx.beginPath();
-  ctx.ellipse(0, -32, 9, 5, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -29, 10, 5, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = '#222';
-  ctx.beginPath(); ctx.arc(-10, -45, 2.8, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(10, -45, 2.8, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-10, -42, 3.2, 2.2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(10, -42, 3.2, 2.2, 0, 0, Math.PI * 2); ctx.fill();
 
+  ctx.restore();
+
+  // Tiny gold beat marks make the alternating pump readable without turning
+  // the character into another noisy overlay.
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = '#ffcc4d';
+  ctx.font = `700 ${Math.max(14, 18 * s)}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.fillText('♪', x - 68 * s, y - 104 * s);
   ctx.restore();
 }
 
@@ -509,124 +554,54 @@ function drawShoes() {
   }
 }
 
-// --- Rally scene (from the reference photo: soft-focus MAGA crowd, signs,
-// teleprompters, striped press rails, blurred heads in the foreground) ---
-// The static layers are pre-rendered to offscreen canvases once per resize,
-// with canvas blur filters doing the photo's depth-of-field.
-const CROWD_SKIN = ['#e8b98f', '#d69f6e', '#c8895a', '#a86a43', '#7d4d2e', '#f0c8a0'];
-const CROWD_SHIRT = ['#a83232', '#2f4d7a', '#8a8f98', '#cfd3d8', '#c8102e', '#243a72', '#c99a2e'];
-let bgCanvas = null, fgCanvas = null, sceneW = 0, sceneH = 0;
+// --- Rally scene ----------------------------------------------------------
+// The supplied photo does the heavy lifting here. It keeps the crowd,
+// teleprompters, podium, and color palette coherent while the game layer stays
+// responsible for the animated dancer and incoming shoes.
+const rallyImage = new Image();
+rallyImage.src = 'archive/crowd.jpg?v=1';
+rallyImage.onload = () => { bgCanvas = null; };
+let bgCanvas = null, sceneW = 0, sceneH = 0;
 
-function drawCrowdPerson(g, p) {
-  g.fillStyle = p.shirt;                          // shoulders
-  g.beginPath(); g.arc(p.x, p.y + p.rad * 1.6, p.rad * 1.5, Math.PI, 0); g.fill();
-  g.fillStyle = p.skin;                           // head
-  g.beginPath(); g.arc(p.x, p.y, p.rad, 0, Math.PI * 2); g.fill();
-  if (p.hat) {                                    // red cap
-    g.fillStyle = '#c8102e';
-    g.beginPath(); g.arc(p.x, p.y - p.rad * 0.1, p.rad * 0.95, Math.PI, 0); g.fill();
-    g.fillRect(p.x - p.rad * 1.1, p.y - p.rad * 0.28, p.rad * 1.3, p.rad * 0.26);
-  }
-}
-
-function drawSign(g, x, y, w, h, bg, fg, text, fontScale) {
-  g.fillStyle = bg;
-  g.strokeStyle = 'rgba(255,255,255,0.45)';
-  g.lineWidth = 2;
-  g.beginPath(); g.roundRect(x, y, w, h, 4); g.fill(); g.stroke();
-  g.fillStyle = fg;
-  g.font = `bold ${Math.floor(h * fontScale)}px Arial`;
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText(text, x + w / 2, y + h / 2);
-}
-
-// White press rail with the red top stripe running across the floor.
-function drawRail(g, y) {
-  g.fillStyle = '#c8102e';
-  g.fillRect(0, y, W, 12);
-  g.fillStyle = '#e9e9ea';
-  g.fillRect(0, y + 12, W, 22);
-  g.fillStyle = 'rgba(0,0,0,0.18)';
-  for (let x = 30; x < W; x += 90) g.fillRect(x, y + 12, 4, 22);
-}
-
-// Dark glass teleprompter panel on a thin pole, tilted in toward him.
-function drawTeleprompter(g, x, tilt, railY) {
-  const s = figureScale();
-  const ty = trumpPos().y;
-  g.fillStyle = '#0a0f18';
-  g.fillRect(x - 3 * s, ty + 30 * s, 6 * s, railY - ty - 30 * s);
-  g.save();
-  g.translate(x, ty + 4 * s);
-  g.rotate(tilt);
-  g.fillStyle = '#0e1420';
-  g.strokeStyle = '#2a3345';
-  g.lineWidth = 3 * s;
-  g.beginPath(); g.roundRect(-52 * s, -34 * s, 104 * s, 68 * s, 8 * s); g.fill(); g.stroke();
-  g.fillStyle = 'rgba(255,255,255,0.06)';
-  g.beginPath(); g.roundRect(-46 * s, -28 * s, 40 * s, 14 * s, 5 * s); g.fill();
-  g.restore();
+function drawImageCover(g, image) {
+  const scale = Math.max(W / image.naturalWidth, H / image.naturalHeight);
+  const width = image.naturalWidth * scale;
+  const height = image.naturalHeight * scale;
+  g.drawImage(image, (W - width) / 2, (H - height) / 2, width, height);
 }
 
 function buildScene() {
   sceneW = W; sceneH = H;
-  const railY = H * 0.78;
-
   bgCanvas = document.createElement('canvas');
   bgCanvas.width = W; bgCanvas.height = H;
   const b = bgCanvas.getContext('2d');
 
-  const grad = b.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, '#20304d');
-  grad.addColorStop(1, '#0b1622');
-  b.fillStyle = grad;
+  if (rallyImage.complete && rallyImage.naturalWidth) {
+    b.save();
+    b.filter = 'blur(1.2px) saturate(0.88)';
+    drawImageCover(b, rallyImage);
+    b.restore();
+  } else {
+    const grad = b.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#20304d');
+    grad.addColorStop(1, '#0b1622');
+    b.fillStyle = grad;
+    b.fillRect(0, 0, W, H);
+  }
+
+  b.fillStyle = 'rgba(9,18,30,0.25)';
+  b.fillRect(0, 0, W, H);
+  const glow = b.createRadialGradient(W / 2, H * 0.34, 40, W / 2, H * 0.34, W * 0.66);
+  glow.addColorStop(0, 'rgba(255,220,155,0.12)');
+  glow.addColorStop(1, 'rgba(9,18,30,0.28)');
+  b.fillStyle = glow;
   b.fillRect(0, 0, W, H);
 
-  b.filter = 'blur(3px)';                          // crowd is out of focus, like the photo
-  const step = 46;
-  const cols = Math.ceil(W / step) + 2;
-  const rows = Math.ceil(H / 40) + 2;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      drawCrowdPerson(b, {
-        x: c * step + (r % 2) * (step / 2) + (Math.random() - 0.5) * 30,
-        y: r * 40 + (Math.random() - 0.5) * 20 + 16,
-        rad: 9 + Math.random() * 3,
-        skin: CROWD_SKIN[(Math.random() * CROWD_SKIN.length) | 0],
-        shirt: CROWD_SHIRT[(Math.random() * CROWD_SHIRT.length) | 0],
-        hat: Math.random() < 0.55,
-      });
-    }
-  }
-  b.filter = 'none';
-
-  b.fillStyle = 'rgba(9,18,30,0.5)';               // scrim: push the crowd back
+  const vignette = b.createRadialGradient(W / 2, H / 2, H * 0.26, W / 2, H / 2, H * 0.78);
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.38)');
+  b.fillStyle = vignette;
   b.fillRect(0, 0, W, H);
-
-  drawSign(b, W * 0.05, H * 0.55, 120, 34, '#123b7a', '#ffffff', 'TRUMP', 0.5);
-  drawSign(b, W * 0.09, H * 0.66, 176, 42, '#ffffff', '#c8102e', 'KEEP AMERICA GREAT', 0.3);
-  drawSign(b, W * 0.80, H * 0.60, 110, 40, '#ffffff', '#1b3a8b', 'USA', 0.5);
-  drawRail(b, railY);
-
-  const px = Math.min(W * 0.30, 340 * figureScale());
-  drawTeleprompter(b, W / 2 - px, 0.09, railY);
-  drawTeleprompter(b, W / 2 + px, -0.09, railY);
-
-  // Foreground: big out-of-focus heads along the bottom edge — the shoes fly
-  // up from behind them.
-  fgCanvas = document.createElement('canvas');
-  fgCanvas.width = W; fgCanvas.height = H;
-  const f = fgCanvas.getContext('2d');
-  f.filter = 'blur(9px)';
-  const FG = ['#2e3138', '#423a30', '#37432f', '#33272a', '#252c3a', '#4a2e2e'];
-  const n = Math.ceil(W / 90) + 2;
-  for (let i = 0; i < n; i++) {
-    const x = i * 90 + (Math.random() - 0.5) * 40;
-    const r = 45 + Math.random() * 30;
-    f.fillStyle = FG[(Math.random() * FG.length) | 0];
-    f.beginPath(); f.ellipse(x, H + r * 0.35 - Math.random() * 30, r, r * 1.1, 0, 0, Math.PI * 2); f.fill();
-  }
-  f.filter = 'none';
 }
 
 // Simplified presidential seal for the podium face.
@@ -697,7 +672,6 @@ function draw() {
   drawPodium();
   drawShoes();
   drawArms();
-  if (fgCanvas) ctx.drawImage(fgCanvas, 0, 0);
 
   ctx.restore();
 }
