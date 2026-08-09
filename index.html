@@ -53,6 +53,24 @@
     width: 42px; height: 42px; border-radius: 50%; border: none;
     background: rgba(0,0,0,0.35); color: #fff; font-size: 20px; cursor: pointer;
   }
+  #handControlWrap {
+    position: fixed; top: 50%; right: 18px; z-index: 12; transform: translateY(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    padding: 12px 9px; border: 1px solid rgba(255,255,255,0.2); border-radius: 10px;
+    background: rgba(7,14,27,0.78); box-shadow: 0 5px 20px rgba(0,0,0,0.24);
+    color: #ffcc4d; font: 700 10px Arial, sans-serif; letter-spacing: 1px;
+    pointer-events: auto;
+  }
+  #handControl {
+    width: 26px; height: 174px; margin: 1px 0; accent-color: #ffcc4d;
+    writing-mode: vertical-lr; direction: rtl; cursor: ns-resize; touch-action: none;
+  }
+  #handControlWrap .control-arrow { color: #d8dfeb; font-size: 12px; line-height: 1; }
+  #handControlLabel { white-space: nowrap; }
+  @media (max-width: 520px) {
+    #handControlWrap { right: 8px; padding: 9px 6px; }
+    #handControl { height: 140px; }
+  }
   #midi-bg { display: none; }
 </style>
 </head>
@@ -64,11 +82,17 @@
   <div class="hud-pill hud-lives"><span class="hud-label">RALLY ENERGY</span><span class="hud-value" id="lives">❤❤❤</span></div>
 </div>
 <button id="muteBtn" aria-label="Toggle sound">🔊</button>
+<div id="handControlWrap" aria-label="Right hand height control">
+  <span class="control-arrow">▲</span>
+  <input id="handControl" type="range" min="0" max="100" value="50" aria-label="Right hand height">
+  <span class="control-arrow">▼</span>
+  <span id="handControlLabel">RIGHT HAND</span>
+</div>
 <div id="overlay">
   <div class="eyebrow">RALLY MODE • SHOE STORM</div>
   <h1>Trump Dance<br><span>Knock Back the Shoes</span></h1>
   <p>The crowd is throwing shoes. Keep the dance going and bat them back before they reach the podium.</p>
-  <p class="tip">Move your mouse or drag your finger across the rally to guide the alternating fist pumps.</p>
+  <p class="tip">Use the right-side scroller to move his right fist. His left fist mirrors it in the opposite direction.</p>
   <p id="finalScore" class="hidden"></p>
   <p id="startBtn"><strong>Click / Tap to Start</strong></p>
 </div>
@@ -86,6 +110,7 @@ const overlay = document.getElementById('overlay');
 const startBtn = document.getElementById('startBtn');
 const finalScoreEl = document.getElementById('finalScore');
 const muteBtn = document.getElementById('muteBtn');
+const handControl = document.getElementById('handControl');
 
 let audioCtx = null;
 let audioEnabled = true;
@@ -176,20 +201,21 @@ let danceTimer = 0;
 let hitFlash = 0;
 let shakeTime = 0;
 
-// The dance keeps both fists around hip height. The pointer only nudges the
-// whole stance left or right so the animation still reads as a slow, subdued
-// alternating pump instead of two arms chasing the cursor.
+// The scroller sets the right fist height. The left fist mirrors the same
+// amount in the opposite direction, keeping the dance pose visibly linked.
 const SHOULDER_DX = 42;
 const SHOULDER_Y = 7;
 const ELBOW_DX = 58;
 const ELBOW_Y = 46;
-const FORE = 64;
 const HAND_R = 13;
 const BLOCK_R = 35;
 const LAND_R = 18;
 const TRUMP_Y = 168;
 const PODIUM_HALF = 112;
 const PODIUM_OFFSET = 126;
+const HAND_X = 72;
+const HAND_CENTER_Y = -34;
+const HAND_TRAVEL_Y = 25;
 
 function figureScale() { return Math.min(1.55, Math.max(0.86, W / 1050)); }
 function trumpPos() {
@@ -203,47 +229,20 @@ function rightShoulder() { const t = trumpPos(), s = figureScale(); return { x: 
 function leftElbow()  { const t = trumpPos(), s = figureScale(); return { x: t.x - ELBOW_DX * s, y: t.y + ELBOW_Y * s }; }
 function rightElbow() { const t = trumpPos(), s = figureScale(); return { x: t.x + ELBOW_DX * s, y: t.y + ELBOW_Y * s }; }
 
-// One pointer aims both forearms: each rotates at its fixed elbow toward the
-// pointer (clamped shoulder-high), and the fists jab ALTERNATELY — left,
-// right, left — like his rally punches.
-let pointer = { x: 0, y: 0 };
-let armAng = { left: -Math.PI * 0.6, right: -Math.PI * 0.4 };
 let fists = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
-let jabs = { left: 0, right: 0 };
-let punchTimer = 0;
-
-function pointerMove(x, y) { pointer.x = x; pointer.y = y; }
-function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
-function danceAngle(side) { return side === 'left' ? Math.PI - 0.58 : 0.58; }
+let handHeight = Number(handControl.value);
+handControl.addEventListener('input', () => { handHeight = Number(handControl.value); });
 
 function computeFists() {
-  const P = 0.74;
-  const phase = (punchTimer / P) % 2;
-  jabs.left  = phase < 1 ? Math.sin(phase * Math.PI) * 0.78 : 0;
-  jabs.right = phase >= 1 ? Math.sin((phase - 1) * Math.PI) * 0.78 : 0;
   const s = figureScale();
   const t = trumpPos();
-  const aim = clamp((pointer.x - t.x) / (W * 0.42), -1, 1) * 0.22;
-  for (const [side, el] of [['left', leftElbow()], ['right', rightElbow()]]) {
-    armAng[side] = danceAngle(side) + aim;
-    const ext = (FORE + jabs[side] * 18) * s;
-    fists[side].x = el.x + Math.cos(armAng[side]) * ext;
-    fists[side].y = el.y + Math.sin(armAng[side]) * ext;
-  }
+  const offset = ((handHeight - 50) / 50) * HAND_TRAVEL_Y * s;
+  const handY = t.y + HAND_CENTER_Y * s;
+  fists.right.x = t.x + HAND_X * s;
+  fists.right.y = handY - offset;
+  fists.left.x = t.x - HAND_X * s;
+  fists.left.y = handY + offset;
 }
-
-// Start with the fists raised, guarding his face.
-pointer.x = W / 2; pointer.y = trumpPos().y - 80 * figureScale();
-canvas.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
-canvas.addEventListener('touchmove', e => {
-  e.preventDefault();
-  const t = e.touches[0];
-  if (t) pointerMove(t.clientX, t.clientY);
-}, { passive: false });
-canvas.addEventListener('touchstart', e => {
-  const t = e.touches[0];
-  if (t) pointerMove(t.clientX, t.clientY);
-}, { passive: false });
 
 function startGame() {
   score = 0; lives = 3; shoes = []; spawnTimer = 0; spawnInterval = 1300; elapsed = 0;
@@ -268,18 +267,20 @@ function updateHud() {
   livesEl.textContent = '❤'.repeat(full) + '🖤'.repeat(3 - full);
 }
 
-// Aim shoes at the two slow fist lanes. A few are thrown low at the podium,
-// which gives the player breathing room without making the scene feel empty.
+// Aim shoes at the two possible fist lanes. Their height varies, so the
+// scroller has to be used instead of letting the current pose block everything.
 function reachableTarget() {
   if (Math.random() < 0.22) {
     const t = trumpPos();
     return { x: t.x + (Math.random() - 0.5) * podiumHalf() * 1.5, y: podiumTop() + 55 * figureScale() + Math.random() * 70 * figureScale() };
   }
+  const s = figureScale();
   const side = Math.random() < 0.5 ? 'left' : 'right';
-  const el = side === 'left' ? leftElbow() : rightElbow();
-  const ang = danceAngle(side) + (Math.random() - 0.5) * 0.34;
-  const rr = FORE * figureScale() * (0.88 + Math.random() * 0.22);
-  return { x: el.x + Math.cos(ang) * rr, y: el.y + Math.sin(ang) * rr };
+  const t = trumpPos();
+  return {
+    x: t.x + (side === 'left' ? -HAND_X : HAND_X) * s + (Math.random() - 0.5) * 16 * s,
+    y: t.y - (8 + Math.random() * 52) * s,
+  };
 }
 
 function spawnShoe() {
@@ -314,7 +315,6 @@ function endGame() {
 function update(dt) {
   danceTimer += dt;
 
-  punchTimer += dt;
   computeFists();
 
   if (state !== 'playing') return;
@@ -402,7 +402,7 @@ function drawOneArm(sh, el, side) {
   ctx.lineTo(el.x, el.y);   // upper arm: fixed
   ctx.lineTo(f.x, f.y);     // forearm: all the motion happens here
   ctx.stroke();
-  const active = jabs[side] > 0.35;
+  const active = side === 'right';
   drawFist(f.x, f.y, (active ? HAND_R + 2 : HAND_R) * s, active);
 }
 
@@ -411,16 +411,20 @@ function drawArms() {
   drawOneArm(rightShoulder(), rightElbow(), 'right');
 }
 
-// Faint arcs show the two fist lanes without covering the photo backdrop.
+// Faint vertical lanes show the scroller's range without covering the photo backdrop.
 function drawReachHint() {
   ctx.save();
   ctx.setLineDash([5, 9]);
   ctx.lineWidth = 2;
   ctx.strokeStyle = 'rgba(255,204,77,0.18)';
-  const reach = FORE * figureScale();
-  for (const [side, el] of [['left', leftElbow()], ['right', rightElbow()]]) {
+  const s = figureScale();
+  const t = trumpPos();
+  const y1 = t.y + (HAND_CENTER_Y - HAND_TRAVEL_Y) * s;
+  const y2 = t.y + (HAND_CENTER_Y + HAND_TRAVEL_Y) * s;
+  for (const x of [t.x - HAND_X * s, t.x + HAND_X * s]) {
     ctx.beginPath();
-    ctx.arc(el.x, el.y, reach, danceAngle(side) - 0.18, danceAngle(side) + 0.18);
+    ctx.moveTo(x, y1);
+    ctx.lineTo(x, y2);
     ctx.stroke();
   }
   ctx.restore();
