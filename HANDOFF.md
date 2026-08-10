@@ -1,30 +1,31 @@
-# HANDOFF — Aug 10 2026 · main @ f473e3f
+# HANDOFF — Aug 10 2026 · portrait-rig pending
 
 ## Shipped this session
 - Live game: https://marksher.github.io/trump-punch/
 - Current source is the static canvas game in `index.html`.
-- Current live scene uses the compact game composition in `assets/rally-crowd-cartoon.png`; the body is not rendered as a full-viewport reference image.
-- Current arm art is `assets/mr-edwards-arm-segments.png`, rendered as separate upper-arm and forearm/fist pieces.
+- Current live scene uses the compact game composition in `assets/rally-crowd-cartoon.png`.
+- The arm rig is being re-anchored to the backdrop’s natural image coordinates so portrait cover-cropping cannot detach it.
+- `archive/dance.jpg` is the current arm-art reference; its white backdrop is removed at runtime and its arm crops are rendered as separate upper-arm and forearm/fist pieces.
 - The right-hand vertical control mirrors the left hand in the opposite direction.
 - Shoes target randomized micro-points across each hand’s sweep; three misses lock that side and remove its incoming shoes.
-- Last live check: the compact scene, split arm assets, slider, and body all rendered at 1280×820 with no console errors.
+- Last live check before this change: the compact scene rendered at 1280×820. Portrait behavior is the regression being fixed now.
 
 ## In flight (exact state, file paths)
 - Gameplay is close; the user says the action and rules are working.
 - The compact framing rollback is live after the full-viewport reference made Mr. Edwards too large.
-- Current checked-in commit: `f473e3f`.
+- In flight: verify the new backdrop-anchored rig at portrait and desktop sizes.
 
 ## Next steps (ordered, actionable)
-1. Have the user judge the live body/shoulder attachment.
-2. If needed, adjust only the reference-image joint coordinates; keep the shared transform.
+1. Verify portrait and desktop live screenshots after the new rig ships.
+2. If needed, adjust only the measured backdrop/dance reference coordinates; keep the shared transform.
 3. Keep the gameplay contract: two-joint arms, mirrored slider, reachable targets, three-hit side lockout.
 4. Verify desktop and mobile live screenshots before reporting completion.
 
 ## Open questions
-- Confirm whether the compact scene needs any remaining shoulder/arm alignment polish.
+- Confirm whether the new `dance.jpg` crops need any remaining shoulder/arm alignment polish.
 
 ## Key paths & commands
 - Source: `/Users/runners/working/trump-punch/index.html`
-- Required assets: `assets/rally-crowd-cartoon.png`, `assets/mr-edwards-arm-segments.png`, `assets/mr-edwards.png`, `assets/ymca.mid`
+- Required assets: `assets/rally-crowd-cartoon.png`, `assets/mr-edwards-arm-segments.png`, `assets/mr-edwards.png`, `archive/dance.jpg`, `assets/ymca.mid`
 - Live URL: `https://marksher.github.io/trump-punch/`
 - Deploy: push `main`; GitHub Pages serves the repository.

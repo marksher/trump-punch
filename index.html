@@ -209,31 +209,49 @@ const MAX_SIDE_HITS = 3;
 let sideHits = { left: 0, right: 0 };
 let lockedShoulders = { left: null, right: null };
 
-// The scroller sets the right fist height. The left fist mirrors the same
-// amount in the opposite direction, keeping the dance pose visibly linked.
-const SHOULDER_DX = 48;
-const SHOULDER_Y = 14;
-const ARM_UPPER_LENGTH = 78;
-const ARM_FOREARM_LENGTH = 82;
+// These points are measured against the natural 1514×1039 rally image. All
+// gameplay geometry is projected through the same cover transform as the
+// backdrop, so portrait layouts cannot pull the arms away from the body.
+const BACKDROP_CENTER = { x: 756, y: 300 };
+const BACKDROP_LEFT_SHOULDER = { x: 634, y: 302 };
+const BACKDROP_RIGHT_SHOULDER = { x: 944, y: 302 };
+const BACKDROP_LEFT_HAND_X = 548;
+const BACKDROP_RIGHT_HAND_X = 964;
+const BACKDROP_HAND_Y = 190;
+const BACKDROP_HAND_TRAVEL_Y = 116;
+const ARM_UPPER_LENGTH = 165;
+const ARM_FOREARM_LENGTH = 180;
 const HAND_R = 13;
 const BLOCK_R = 35;
 const LAND_R = 18;
-const TRUMP_Y = 168;
-const PODIUM_HALF = 112;
-const PODIUM_OFFSET = 126;
-const HAND_X = 122;
-const HAND_CENTER_Y = -30;
-const HAND_TRAVEL_Y = 58;
+const BACKDROP_PODIUM_TOP_Y = 455;
+const BACKDROP_PODIUM_HALF = 226;
 
-function figureScale() { return Math.min(1.55, Math.max(0.86, W / 1050)); }
-function trumpPos() {
-  const s = figureScale();
-  return { x: W / 2 + Math.sin(danceTimer * 2.2) * 5 * s, y: Math.min(H * 0.30, TRUMP_Y * s) };
+function sceneMetrics() {
+  const sourceW = rallyImage.naturalWidth || 1514;
+  const sourceH = rallyImage.naturalHeight || 1039;
+  const scale = Math.max(W / sourceW, H / sourceH);
+  return { scale, offsetX: (W - sourceW * scale) / 2, offsetY: (H - sourceH * scale) / 2 };
 }
-function podiumTop() { return trumpPos().y + PODIUM_OFFSET * figureScale(); }
-function podiumHalf() { return PODIUM_HALF * figureScale(); }
-function leftShoulder()  { const t = trumpPos(), s = figureScale(); return { x: t.x - SHOULDER_DX * s, y: t.y + SHOULDER_Y * s }; }
-function rightShoulder() { const t = trumpPos(), s = figureScale(); return { x: t.x + SHOULDER_DX * s, y: t.y + SHOULDER_Y * s }; }
+function figureScale() { return sceneMetrics().scale; }
+function backdropPoint(x, y) {
+  const scene = sceneMetrics();
+  return { x: scene.offsetX + x * scene.scale, y: scene.offsetY + y * scene.scale };
+}
+function trumpPos() {
+  const scene = sceneMetrics();
+  const p = backdropPoint(BACKDROP_CENTER.x, BACKDROP_CENTER.y);
+  return { x: p.x + Math.sin(danceTimer * 2.2) * 5 * scene.scale, y: p.y };
+}
+function podiumTop() { return backdropPoint(BACKDROP_CENTER.x, BACKDROP_PODIUM_TOP_Y).y; }
+function podiumHalf() { return BACKDROP_PODIUM_HALF * figureScale(); }
+function anchoredPoint(point) {
+  const base = backdropPoint(BACKDROP_CENTER.x, BACKDROP_CENTER.y);
+  const t = trumpPos();
+  return { x: backdropPoint(point.x, point.y).x + t.x - base.x, y: backdropPoint(point.x, point.y).y + t.y - base.y };
+}
+function leftShoulder()  { return anchoredPoint(BACKDROP_LEFT_SHOULDER); }
+function rightShoulder() { return anchoredPoint(BACKDROP_RIGHT_SHOULDER); }
 function sideDisabled(side) { return sideHits[side] >= MAX_SIDE_HITS; }
 function shoulderFor(side) {
   if (lockedShoulders[side]) return lockedShoulders[side];
@@ -256,6 +274,12 @@ function armPose(side) {
     Math.abs(upperLength - forearmLength) + 0.01,
     Math.min(upperLength + forearmLength - 0.01, distance),
   );
+  const wrist = distance > 0
+    ? {
+      x: shoulder.x + (dx / distance) * reachableDistance,
+      y: shoulder.y + (dy / distance) * reachableDistance,
+    }
+    : { x: shoulder.x + upperLength + forearmLength - 0.01, y: shoulder.y };
   const direction = Math.atan2(dy, dx);
   const bend = Math.acos(
     (upperLength * upperLength + reachableDistance * reachableDistance - forearmLength * forearmLength)
@@ -266,7 +290,7 @@ function armPose(side) {
     x: shoulder.x + Math.cos(elbowAngle) * upperLength,
     y: shoulder.y + Math.sin(elbowAngle) * upperLength,
   };
-  return { shoulder, elbow, wrist: target };
+  return { shoulder, elbow, wrist };
 }
 
 let fists = { left: { x: 0, y: 0 }, right: { x: 0, y: 0 } };
@@ -276,11 +300,11 @@ handControl.addEventListener('input', () => { handHeight = Number(handControl.va
 function computeFists() {
   const s = figureScale();
   const t = trumpPos();
-  const offset = ((handHeight - 50) / 50) * HAND_TRAVEL_Y * s;
-  const handY = t.y + HAND_CENTER_Y * s;
-  fists.right.x = t.x + HAND_X * s;
+  const offset = ((handHeight - 50) / 50) * BACKDROP_HAND_TRAVEL_Y * s;
+  const handY = anchoredPoint({ x: BACKDROP_CENTER.x, y: BACKDROP_HAND_Y }).y;
+  fists.right.x = anchoredPoint({ x: BACKDROP_RIGHT_HAND_X, y: BACKDROP_HAND_Y }).x;
   fists.right.y = handY - offset;
-  fists.left.x = t.x - HAND_X * s;
+  fists.left.x = anchoredPoint({ x: BACKDROP_LEFT_HAND_X, y: BACKDROP_HAND_Y }).x;
   fists.left.y = handY + offset;
 }
 
@@ -329,11 +353,12 @@ function reachableTarget(preferredSide) {
     ? preferredSide
     : activeSides[Math.floor(Math.random() * activeSides.length)];
   const side = targetSide === 'left' ? -1 : 1;
-  const microX = HAND_X - 12 + Math.random() * 24;
-  const handTop = t.y + (HAND_CENTER_Y - HAND_TRAVEL_Y) * s;
-  const handBottom = t.y + (HAND_CENTER_Y + HAND_TRAVEL_Y) * s;
+  const handX = targetSide === 'left' ? BACKDROP_LEFT_HAND_X : BACKDROP_RIGHT_HAND_X;
+  const microX = handX + (Math.random() - 0.5) * 24;
+  const handTop = anchoredPoint({ x: BACKDROP_CENTER.x, y: BACKDROP_HAND_Y - BACKDROP_HAND_TRAVEL_Y }).y;
+  const handBottom = anchoredPoint({ x: BACKDROP_CENTER.x, y: BACKDROP_HAND_Y + BACKDROP_HAND_TRAVEL_Y }).y;
   return {
-    x: t.x + side * microX * s,
+    x: anchoredPoint({ x: microX, y: BACKDROP_HAND_Y }).x,
     y: handTop + Math.random() * (handBottom - handTop),
     side: targetSide,
   };
@@ -531,7 +556,21 @@ function armSegmentsFor(side) {
   };
 }
 
-function drawArmSegment(segment, from, to) {
+// The supplied dance reference is a full-body JPEG with a white background.
+// It is converted to a transparent canvas once, preserving its white cuffs
+// while removing only the connected white backdrop.
+function danceSegmentFor(side) {
+  return {
+    upper: side === 'left'
+      ? { sx: 0, sy: 158, sw: 150, sh: 228, fromX: 91, fromY: 33, toX: 18, toY: 183 }
+      : { sx: 340, sy: 164, sw: 144, sh: 252, fromX: 58, fromY: 35, toX: 133, toY: 180 },
+    forearm: side === 'left'
+      ? { sx: 0, sy: 70, sw: 100, sh: 260, fromX: 20, fromY: 252, toX: 36, toY: 52 }
+      : { sx: 350, sy: 88, sw: 134, sh: 248, fromX: 120, fromY: 246, toX: 62, toY: 76 },
+  };
+}
+
+function drawArmSegment(image, segment, from, to) {
   const sourceDx = segment.toX - segment.fromX;
   const sourceDy = segment.toY - segment.fromY;
   const targetDx = to.x - from.x;
@@ -545,7 +584,7 @@ function drawArmSegment(segment, from, to) {
   ctx.scale(targetLength / sourceLength, targetLength / sourceLength);
   ctx.rotate(-Math.atan2(sourceDy, sourceDx));
   ctx.drawImage(
-    mrEdwardsArmSegmentsImage,
+    image,
     segment.sx, segment.sy, segment.sw, segment.sh,
     -segment.fromX, -segment.fromY, segment.sw, segment.sh,
   );
@@ -557,12 +596,21 @@ function drawOneArm(side) {
   const sh = pose.shoulder;
   const f = fists[side];
   const s = figureScale();
+  if (danceCutoutCanvas) {
+    const { upper, forearm } = danceSegmentFor(side);
+    ctx.save();
+    ctx.globalAlpha = hitFlash > 0 ? 0.55 + 0.45 * Math.sin(hitFlash * 50) : 1;
+    drawArmSegment(danceCutoutCanvas, upper, pose.shoulder, pose.elbow);
+    drawArmSegment(danceCutoutCanvas, forearm, pose.elbow, pose.wrist);
+    ctx.restore();
+    return;
+  }
   if (mrEdwardsArmSegmentsImage.complete && mrEdwardsArmSegmentsImage.naturalWidth) {
     const { upper, forearm } = armSegmentsFor(side);
     ctx.save();
     ctx.globalAlpha = hitFlash > 0 ? 0.55 + 0.45 * Math.sin(hitFlash * 50) : 1;
-    drawArmSegment(upper, pose.shoulder, pose.elbow);
-    drawArmSegment(forearm, pose.elbow, pose.wrist);
+    drawArmSegment(mrEdwardsArmSegmentsImage, upper, pose.shoulder, pose.elbow);
+    drawArmSegment(mrEdwardsArmSegmentsImage, forearm, pose.elbow, pose.wrist);
     ctx.restore();
     return;
   }
@@ -609,12 +657,11 @@ function drawReachHint() {
   ctx.lineWidth = 2;
   ctx.strokeStyle = 'rgba(255,204,77,0.18)';
   const s = figureScale();
-  const t = trumpPos();
-  const y1 = t.y + (HAND_CENTER_Y - HAND_TRAVEL_Y) * s;
-  const y2 = t.y + (HAND_CENTER_Y + HAND_TRAVEL_Y) * s;
+  const y1 = anchoredPoint({ x: BACKDROP_CENTER.x, y: BACKDROP_HAND_Y - BACKDROP_HAND_TRAVEL_Y }).y;
+  const y2 = anchoredPoint({ x: BACKDROP_CENTER.x, y: BACKDROP_HAND_Y + BACKDROP_HAND_TRAVEL_Y }).y;
   const lanes = [
-    ['left', t.x - HAND_X * s],
-    ['right', t.x + HAND_X * s],
+    ['left', anchoredPoint({ x: BACKDROP_LEFT_HAND_X, y: BACKDROP_HAND_Y }).x],
+    ['right', anchoredPoint({ x: BACKDROP_RIGHT_HAND_X, y: BACKDROP_HAND_Y }).x],
   ];
   for (const [side, x] of lanes) {
     if (sideDisabled(side)) continue;
@@ -782,6 +829,47 @@ const mrEdwardsImage = new Image();
 mrEdwardsImage.src = 'assets/mr-edwards.png?v=1';
 const mrEdwardsArmSegmentsImage = new Image();
 mrEdwardsArmSegmentsImage.src = 'assets/mr-edwards-arm-segments.png?v=2';
+const danceImage = new Image();
+let danceCutoutCanvas = null;
+danceImage.onload = () => {
+  const cutout = document.createElement('canvas');
+  cutout.width = danceImage.naturalWidth;
+  cutout.height = danceImage.naturalHeight;
+  const cutoutCtx = cutout.getContext('2d');
+  cutoutCtx.drawImage(danceImage, 0, 0);
+  const pixels = cutoutCtx.getImageData(0, 0, cutout.width, cutout.height);
+  const { data, width, height } = pixels;
+  const visited = new Uint8Array(width * height);
+  const queue = [];
+  const isBackdrop = index => {
+    const r = data[index];
+    const g = data[index + 1];
+    const b = data[index + 2];
+    return r > 232 && g > 232 && b > 232 && Math.max(r, g, b) - Math.min(r, g, b) < 22;
+  };
+  const enqueue = (x, y) => {
+    const index = y * width + x;
+    if (!visited[index] && isBackdrop(index * 4)) {
+      visited[index] = 1;
+      queue.push(index);
+    }
+  };
+  for (let x = 0; x < width; x++) { enqueue(x, 0); enqueue(x, height - 1); }
+  for (let y = 1; y < height - 1; y++) { enqueue(0, y); enqueue(width - 1, y); }
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const index = queue[cursor];
+    data[index * 4 + 3] = 0;
+    const x = index % width;
+    const y = Math.floor(index / width);
+    if (x > 0) enqueue(x - 1, y);
+    if (x + 1 < width) enqueue(x + 1, y);
+    if (y > 0) enqueue(x, y - 1);
+    if (y + 1 < height) enqueue(x, y + 1);
+  }
+  cutoutCtx.putImageData(pixels, 0, 0);
+  danceCutoutCanvas = cutout;
+};
+danceImage.src = 'archive/dance.jpg?v=1';
 let bgCanvas = null, sceneW = 0, sceneH = 0;
 
 function drawImageCover(g, image) {
