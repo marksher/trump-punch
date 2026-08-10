@@ -1,4 +1,4 @@
-# HANDOFF — Aug 09 2026 · main @ d0aceb9
+# HANDOFF — Aug 09 2026 · main @ 2818d54
 
 ## Shipped this session
 - Live game: https://marksher.github.io/trump-punch/
@@ -12,7 +12,7 @@
 ## In flight (exact state, file paths)
 - Gameplay is close; the user says the action and rules are working.
 - The body-anchored implementation is now live, but the user should judge the exact visual attachment before further polish.
-- Current checked-in commit: `d0aceb9`.
+- Current checked-in commit: `2818d54`.
 
 ## Next steps (ordered, actionable)
 1. Have the user judge the live body/shoulder attachment.
