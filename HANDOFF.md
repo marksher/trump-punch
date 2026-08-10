@@ -5,7 +5,7 @@
 - Current source is the static canvas game in `index.html`.
 - Current live scene uses the compact game composition in `assets/rally-crowd-cartoon.png`.
 - The arm rig is being re-anchored to the backdrop’s natural image coordinates so portrait cover-cropping cannot detach it.
-- `archive/dance.jpg` is the current arm-art reference; its white backdrop is removed at runtime and its arm crops are rendered as separate upper-arm and forearm/fist pieces.
+- `archive/dance.jpg` is the current pose/proportion reference; the clean transparent arm cutout remains the rendered upper-arm and forearm/fist art.
 - The right-hand vertical control mirrors the left hand in the opposite direction.
 - Shoes target randomized micro-points across each hand’s sweep; three misses lock that side and remove its incoming shoes.
 - Last live check before this change: the compact scene rendered at 1280×820. Portrait behavior is the regression being fixed now.
@@ -22,7 +22,7 @@
 4. Verify desktop and mobile live screenshots before reporting completion.
 
 ## Open questions
-- Confirm whether the new `dance.jpg` crops need any remaining shoulder/arm alignment polish.
+- Confirm whether the dance-reference proportions need any remaining shoulder/arm alignment polish.
 
 ## Key paths & commands
 - Source: `/Users/runners/working/trump-punch/index.html`
